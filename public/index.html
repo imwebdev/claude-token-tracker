@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Token Coach</title>
+<style>
+  /* ─── Apple-Pro Light — WCAG 2.1 AAA ──────────── */
+  :root {
+    --bg: #fbfbfd;
+    --fg: #1d1d1f;
+    --card: #f5f5f7;
+    --card-hover: #efeff1;
+    --muted: #48484e;
+    --tertiary: #515158;
+    --quaternary: #86868b;
+    --border: rgba(0, 0, 0, 0.08);
+    --separator: rgba(0, 0, 0, 0.05);
+
+    /* AAA-compliant accents on #f5f5f7 backgrounds */
+    --blue: #0060c2;       /* 7.1:1 */
+    --green: #117a22;      /* 7.3:1 */
+    --orange: #995700;     /* 7.0:1 */
+    --red: #961f16;        /* 8.5:1 */
+    --purple: #8234a8;     /* 7.2:1 */
+    --teal: #195464;       /* 9.6:1 */
+    --amber: #7a5600;      /* 7.1:1 */
+
+    --blue-bg: rgba(0, 96, 194, 0.06);
+    --green-bg: rgba(17, 122, 34, 0.06);
+    --orange-bg: rgba(153, 87, 0, 0.06);
+    --red-bg: rgba(150, 31, 22, 0.06);
+    --purple-bg: rgba(130, 52, 168, 0.06);
+    --teal-bg: rgba(25, 84, 100, 0.06);
+    --amber-bg: rgba(122, 86, 0, 0.06);
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+    --radius-sm: 12px;
+    --radius-md: 20px;
+    --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+    --ease-smooth: cubic-bezier(0.45, 0, 0.15, 1);
+
+    --toggle-bg: var(--card);
+    --toggle-icon: '☀️';
+  }
+
+  /* ─── Dark Mode ───────────────────────────────── */
+  [data-theme="dark"] {
+    --bg: #1d1d1f;
+    --fg: #f5f5f7;
+    --card: #2c2c2e;
+    --card-hover: #333335;
+    --muted: #aeaeb2;
+    --tertiary: #8e8e93;
+    --quaternary: #636366;
+    --border: rgba(255, 255, 255, 0.08);
+    --separator: rgba(255, 255, 255, 0.05);
+
+    --blue: #6cb4ff;
+    --green: #6ee7b7;
+    --orange: #fdba74;
+    --red: #fca5a5;
+    --purple: #d4b5ff;
+    --teal: #7edce2;
+    --amber: #fde68a;
+
+    --blue-bg: rgba(108, 180, 255, 0.07);
+    --green-bg: rgba(110, 231, 183, 0.07);
+    --orange-bg: rgba(253, 186, 116, 0.07);
+    --red-bg: rgba(252, 165, 165, 0.07);
+    --purple-bg: rgba(212, 181, 255, 0.07);
+    --teal-bg: rgba(126, 220, 226, 0.07);
+    --amber-bg: rgba(253, 230, 138, 0.07);
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+    --toggle-bg: var(--card);
+    --toggle-icon: '🌙';
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  body {
+    font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--fg);
+    line-height: 1.47; letter-spacing: -0.022em;
+    transition: background 300ms var(--ease), color 300ms var(--ease);
+  }
+  ::selection { background: rgba(0, 96, 194, 0.15); }
+  [data-theme="dark"] ::selection { background: rgba(108, 180, 255, 0.25); }
+
+  .page { max-width: 1080px; margin: 0 auto; padding: clamp(2rem, 4vw, 4rem) 24px 64px; }
+
+  /* ─── Header ──────────────────────────────────── */
+  .page-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: clamp(1.5rem, 3vw, 2.5rem);
+  }
+  h1 {
+    font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: clamp(2rem, 4vw, 3rem); font-weight: 700;
+    line-height: 1.08; letter-spacing: -0.03em;
+  }
+  .subtitle { font-size: 15px; color: var(--muted); margin-top: 6px; }
+  .header-right { display: flex; align-items: center; gap: 12px; padding-top: 10px; }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    animation: pulse 2s ease infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .refresh-label { font-size: 12px; color: var(--quaternary); }
+
+  /* ─── Theme Toggle ────────────────────────────── */
+  .theme-toggle {
+    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card); cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 200ms var(--ease);
+  }
+  .theme-toggle:hover { box-shadow: var(--shadow-md); transform: scale(1.05); }
+
+  /* ─── Section Labels ──────────────────────────── */
+  .section-label {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--tertiary); margin-bottom: 12px;
+  }
+
+  /* ─── Stats Row ───────────────────────────────── */
+  .stats-row {
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    gap: 12px; margin-bottom: clamp(1.5rem, 3vw, 2.5rem);
+  }
+  @media (max-width: 720px) { .stats-row { grid-template-columns: repeat(3, 1fr); } }
+  .stat {
+    background: var(--card); border-radius: var(--radius-md); padding: 20px;
+    transition: box-shadow 400ms var(--ease), transform 400ms var(--ease);
+  }
+  .stat:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+  .stat-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--tertiary); margin-bottom: 6px;
+  }
+  .stat-val {
+    font-family: "SF Pro Display", -apple-system, sans-serif;
+    font-size: clamp(1.4rem, 2.5vw, 1.8rem); font-weight: 700;
+    letter-spacing: -0.03em; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ─── Cards ───────────────────────────────────── */
+  .card {
+    background: var(--card); border-radius: var(--radius-md); padding: 24px;
+    transition: box-shadow 400ms var(--ease);
+  }
+  .card:hover { box-shadow: var(--shadow-md); }
+  .card-title {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--tertiary); margin-bottom: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .card-title .count { font-variant-numeric: tabular-nums; color: var(--quaternary); }
+
+  /* ─── Grid Layouts ────────────────────────────── */
+  .grid-main { display: grid; grid-template-columns: 1fr 380px; gap: 12px; margin-bottom: clamp(1.5rem, 3vw, 2.5rem); }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: clamp(1.5rem, 3vw, 2.5rem); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: clamp(1.5rem, 3vw, 2.5rem); }
+  @media (max-width: 860px) { .grid-main, .grid-3 { grid-template-columns: 1fr; } }
+  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  /* ─── Routing Timeline ────────────────────────── */
+  .timeline {
+    max-height: 520px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: var(--quaternary) transparent;
+  }
+  .timeline::-webkit-scrollbar { width: 5px; }
+  .timeline::-webkit-scrollbar-thumb { background: var(--quaternary); border-radius: 3px; }
+  .tl-entry {
+    display: flex; gap: 12px; padding: 12px 0;
+    border-bottom: 1px solid var(--separator); align-items: flex-start;
+    transition: transform 200ms var(--ease);
+  }
+  .tl-entry:last-child { border-bottom: none; }
+  .tl-entry:hover { transform: translateX(2px); }
+  .tl-time {
+    font-size: 12px; color: var(--tertiary); font-variant-numeric: tabular-nums;
+    width: 48px; flex-shrink: 0; padding-top: 3px;
+  }
+  .tl-date { font-size: 10px; color: var(--quaternary); display: block; }
+  .tl-model { flex-shrink: 0; display: flex; align-items: center; gap: 5px; padding-top: 1px; }
+  .model-badge {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 8px; letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  .badge-opus { background: var(--purple-bg); color: var(--purple); }
+  .badge-sonnet { background: var(--blue-bg); color: var(--blue); }
+  .badge-haiku { background: var(--teal-bg); color: var(--teal); }
+  .badge-codex { background: var(--amber-bg); color: var(--amber); }
+  .delegation-arrow { color: var(--tertiary); font-size: 13px; font-weight: 600; }
+  .tl-body { flex: 1; min-width: 0; }
+  .tl-desc { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .tl-meta { display: flex; gap: 8px; margin-top: 4px; align-items: center; }
+  .tl-project { font-size: 11px; color: var(--tertiary); font-weight: 600; }
+  .tl-size {
+    font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
+    background: var(--separator); color: var(--tertiary);
+    letter-spacing: 0.04em;
+  }
+
+  /* ─── Tabs & Filters ──────────────────────────── */
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 14px; }
+  .tab-btn {
+    font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 8px;
+    border: none; background: transparent; color: var(--tertiary);
+    cursor: pointer; transition: all 200ms var(--ease);
+    font-family: inherit; letter-spacing: -0.01em;
+  }
+  .tab-btn:hover { background: var(--separator); color: var(--muted); }
+  .tab-btn.active { background: var(--border); color: var(--fg); }
+  .filter-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .filter-pill {
+    font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 20px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--tertiary); cursor: pointer; transition: all 200ms var(--ease);
+    text-transform: uppercase; letter-spacing: 0.03em; font-family: inherit;
+  }
+  .filter-pill:hover { border-color: var(--muted); color: var(--muted); }
+  .filter-pill.active { color: var(--fg); background: var(--separator); border-color: var(--muted); }
+  .filter-pill.active.f-opus { background: var(--purple-bg); border-color: var(--purple); color: var(--purple); }
+  .filter-pill.active.f-sonnet { background: var(--blue-bg); border-color: var(--blue); color: var(--blue); }
+  .filter-pill.active.f-haiku { background: var(--teal-bg); border-color: var(--teal); color: var(--teal); }
+  .filter-pill.active.f-codex { background: var(--amber-bg); border-color: var(--amber); color: var(--amber); }
+
+  /* ─── Insights ────────────────────────────────── */
+  .insight {
+    padding: 14px 18px; border-radius: var(--radius-sm); margin-bottom: 10px;
+    border-left: 3px solid; transition: transform 200ms var(--ease);
+  }
+  .insight:hover { transform: translateX(2px); }
+  .insight:last-child { margin-bottom: 0; }
+  .insight.critical { background: var(--red-bg); border-color: var(--red); }
+  .insight.warning { background: var(--orange-bg); border-color: var(--orange); }
+  .insight.info { background: var(--teal-bg); border-color: var(--teal); }
+  .insight.success { background: var(--green-bg); border-color: var(--green); }
+  .insight-title { font-size: 14px; font-weight: 600; margin-bottom: 3px; color: var(--fg); }
+  .insight.critical .insight-title { color: var(--red); }
+  .insight.warning .insight-title { color: var(--orange); }
+  .insight.info .insight-title { color: var(--teal); }
+  .insight.success .insight-title { color: var(--green); }
+  .insight-detail { font-size: 13px; color: var(--muted); line-height: 1.45; margin-bottom: 6px; }
+  .insight-action { font-size: 12px; font-weight: 500; color: var(--blue); padding: 2px 0; line-height: 1.4; }
+
+  /* ─── Bar Charts ──────────────────────────────── */
+  .bar-item { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .bar-item:last-child { margin-bottom: 0; }
+  .bar-name {
+    font-size: 13px; font-weight: 500; color: var(--muted);
+    width: 64px; text-align: right; flex-shrink: 0;
+  }
+  .bar-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 600ms var(--ease-smooth); }
+  .bar-count {
+    font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+    width: 48px; text-align: right; flex-shrink: 0;
+  }
+  .fill-opus { background: var(--purple); }
+  .fill-sonnet { background: var(--blue); }
+  .fill-haiku { background: var(--teal); }
+  .fill-codex { background: var(--amber); }
+  .fill-green { background: var(--green); }
+  .fill-orange { background: var(--orange); }
+
+  /* ─── Cost Rows ───────────────────────────────── */
+  .cost-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--separator);
+  }
+  .cost-row:last-child { border-bottom: none; }
+  .cost-model { font-size: 14px; font-weight: 600; }
+  .cost-amount { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cost-sub { font-size: 12px; color: var(--tertiary); margin-top: 2px; }
+  .cost-total {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 0; margin-top: 4px; border-top: 2px solid var(--border);
+    font-size: 16px; font-weight: 700;
+  }
+  .savings-badge {
+    display: inline-block; font-size: 12px; font-weight: 600;
+    padding: 5px 12px; border-radius: 8px;
+    background: var(--green-bg); color: var(--green);
+  }
+
+  /* ─── Hour Heatmap ────────────────────────────── */
+  .hour-grid { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; }
+  .hour-cell {
+    aspect-ratio: 1; border-radius: 4px; position: relative;
+    transition: transform 200ms var(--ease);
+  }
+  .hour-cell:hover { transform: scale(1.3); z-index: 1; }
+  .hour-labels {
+    display: flex; justify-content: space-between; margin-top: 6px;
+    font-size: 10px; color: var(--quaternary);
+  }
+
+  /* ─── Spark Chart ─────────────────────────────── */
+  .spark { display: flex; align-items: flex-end; gap: 2px; height: 48px; }
+  .spark-bar {
+    flex: 1; border-radius: 2px 2px 0 0; background: var(--blue);
+    opacity: 0.6; min-width: 2px; transition: opacity 200ms;
+  }
+  .spark-bar:hover { opacity: 1; }
+
+  /* ─── Projects ────────────────────────────────── */
+  .project-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--separator);
+  }
+  .project-row:last-child { border-bottom: none; }
+  .project-name { font-size: 14px; font-weight: 600; flex: 1; }
+  .project-msgs { font-size: 12px; color: var(--tertiary); font-variant-numeric: tabular-nums; }
+
+  /* ─── Routing Stacked Bars ────────────────────── */
+  .routing-bar-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--separator);
+  }
+  .routing-bar-row:last-child { border-bottom: none; }
+  .routing-bar-stack {
+    display: flex; height: 6px; border-radius: 3px; overflow: hidden;
+    gap: 1px; flex: 1;
+  }
+
+  /* ─── Tips ────────────────────────────────────── */
+  .tips-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 700px) { .tips-grid { grid-template-columns: 1fr; } }
+  .tip {
+    background: var(--bg); border-radius: var(--radius-sm); padding: 16px;
+    transition: box-shadow 300ms var(--ease);
+  }
+  .tip:hover { box-shadow: var(--shadow-sm); }
+  .tip-title { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
+  .tip-body { font-size: 12px; color: var(--tertiary); line-height: 1.5; }
+
+  /* ─── Animations ──────────────────────────────── */
+  @keyframes fade-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  .anim { animation: fade-up 500ms var(--ease-smooth) both; }
+  .d1 { animation-delay: 80ms; }
+  .d2 { animation-delay: 160ms; }
+  .d3 { animation-delay: 240ms; }
+  .d4 { animation-delay: 320ms; }
+
+  .loading { text-align: center; padding: 100px 40px; color: var(--tertiary); font-size: 15px; }
+  .footer {
+    text-align: center; padding: 24px; font-size: 12px; color: var(--quaternary);
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div id="app"><div class="loading">Loading Token Coach&hellip;</div></div>
+</div>
+
+<script>
+let DATA = null;
+let activeFilter = 'all';
+let timelineTab = 'auto'; // auto = show today if has tasks, else all
+
+// Theme persistence
+function getTheme() { return localStorage.getItem('token-coach-theme') || 'light'; }
+function setTheme(t) {
+  localStorage.setItem('token-coach-theme', t);
+  document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : '');
+}
+function toggleTheme() { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); render(); }
+setTheme(getTheme());
+
+async function load() {
+  try {
+    const res = await fetch('/api/dashboard');
+    DATA = await res.json();
+    render();
+  } catch (e) {
+    document.getElementById('app').innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+  }
+}
+
+function $(v) { return typeof v === 'number' ? v.toLocaleString() : v; }
+function money(v) { return '$' + (v || 0).toFixed(2); }
+function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function modelTier(m) {
+  if (m.includes('opus')) return 'opus';
+  if (m.includes('sonnet')) return 'sonnet';
+  if (m.includes('haiku')) return 'haiku';
+  if (m.includes('codex')) return 'codex';
+  return 'opus';
+}
+function badgeClass(m) { return 'badge-' + modelTier(m); }
+
+function getEffectiveTab() {
+  if (timelineTab !== 'auto') return timelineTab;
+  return DATA?.routing?.todayStats?.totalTasks > 0 ? 'today' : 'all';
+}
+
+function render() {
+  const D = DATA;
+  if (!D) return;
+  const s = D.stats;
+  const c = D.costs;
+  const o = D.optimal;
+  const r = D.routing;
+  const today = r.todayStats;
+  const effectiveTab = getEffectiveTab();
+  const isDark = getTheme() === 'dark';
+
+  document.getElementById('app').innerHTML = `
+    <!-- Header -->
+    <div class="page-header anim">
+      <div>
+        <h1>Token Coach</h1>
+        <p class="subtitle">Model routing transparency &middot; recommended vs actual usage</p>
+      </div>
+      <div class="header-right">
+        <div class="live-dot"></div>
+        <span class="refresh-label">Auto-refresh 30s</span>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">${isDark ? '☀️' : '🌙'}</button>
+      </div>
+    </div>
+
+    <!-- Today Strip -->
+    <div class="section-label anim d1">Today &mdash; ${today.date}</div>
+    <div class="stats-row anim d1">
+      <div class="stat">
+        <div class="stat-label">Tasks Today</div>
+        <div class="stat-val">${today.totalTasks}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Opus</div>
+        <div class="stat-val" style="color:var(--purple)">${today.models.opus || 0}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Sonnet</div>
+        <div class="stat-val" style="color:var(--blue)">${today.models.sonnet || 0}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Haiku</div>
+        <div class="stat-val" style="color:var(--teal)">${today.models.haiku || 0}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Delegated</div>
+        <div class="stat-val" style="color:var(--green)">${today.delegations}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Delegation %</div>
+        <div class="stat-val" style="color:${r.delegationRate > 25 ? 'var(--green)' : 'var(--orange)'}">${r.delegationRate.toFixed(0)}%</div>
+      </div>
+    </div>
+
+    <!-- Main: Timeline + Sidebar -->
+    <div class="grid-main anim d2">
+      <div class="card">
+        <div class="card-title">
+          <span>Model Routing Timeline</span>
+          <span class="count">${r.totalTasks} total</span>
+        </div>
+        <div class="tab-bar">
+          <button class="tab-btn ${effectiveTab === 'today' ? 'active' : ''}" onclick="setTab('today')">Today (${today.totalTasks})</button>
+          <button class="tab-btn ${effectiveTab === 'all' ? 'active' : ''}" onclick="setTab('all')">All Time</button>
+        </div>
+        <div class="filter-row">
+          <button class="filter-pill f-all ${activeFilter === 'all' ? 'active' : ''}" onclick="setFilter('all')">All</button>
+          <button class="filter-pill f-opus ${activeFilter === 'opus' ? 'active' : ''}" onclick="setFilter('opus')">Opus</button>
+          <button class="filter-pill f-sonnet ${activeFilter === 'sonnet' ? 'active' : ''}" onclick="setFilter('sonnet')">Sonnet</button>
+          <button class="filter-pill f-haiku ${activeFilter === 'haiku' ? 'active' : ''}" onclick="setFilter('haiku')">Haiku</button>
+          <button class="filter-pill f-codex ${activeFilter === 'codex' ? 'active' : ''}" onclick="setFilter('codex')">Codex</button>
+        </div>
+        <div class="timeline">${renderTimeline(effectiveTab)}</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card" style="flex:1">
+          <div class="card-title">
+            <span>Insights</span>
+            <span class="count">${D.insights.length}</span>
+          </div>
+          <div style="max-height:340px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--quaternary) transparent">
+            ${D.insights.map(i => `
+              <div class="insight ${i.severity}">
+                <div class="insight-title">${esc(i.title)}</div>
+                <div class="insight-detail">${esc(i.detail)}</div>
+                <div class="insight-action">&rarr; ${esc(i.action)}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Tips</div>
+          <div class="tips-grid">
+            <div class="tip"><div class="tip-title">Short sessions</div><div class="tip-body">Keep under 25 messages. Use /compact or start fresh.</div></div>
+            <div class="tip"><div class="tip-title">Route down</div><div class="tip-body">Searches &rarr; Haiku. Small edits &rarr; Sonnet. Multi-file &rarr; Opus.</div></div>
+            <div class="tip"><div class="tip-title">Parallel agents</div><div class="tip-body">Independent subtasks = parallel subagents, not sequential opus.</div></div>
+            <div class="tip"><div class="tip-title">Be specific</div><div class="tip-body">File paths, line numbers, exact changes. Vague = more tokens.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analytics Row -->
+    <div class="grid-3 anim d3">
+      <div class="card">
+        <div class="card-title">Token Distribution</div>
+        ${renderModelBars(D.modelSummary)}
+        <div style="margin-top:20px">
+          <div class="card-title" style="margin-bottom:10px">Cache Efficiency</div>
+          ${renderCacheBar(D.modelSummary)}
+        </div>
+        <div style="margin-top:20px">
+          <div class="card-title" style="margin-bottom:10px">Task Routing</div>
+          ${renderRoutingBars(r)}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Cost Estimate</div>
+        ${c ? Object.entries(D.modelSummary).map(([tier, m]) => `
+          <div class="cost-row">
+            <div>
+              <div class="cost-model" style="color:var(--${tier})">${tier}</div>
+              <div class="cost-sub">${(m.inputTokens/1e6).toFixed(1)}M in &middot; ${(m.outputTokens/1e6).toFixed(1)}M out</div>
+            </div>
+            <div class="cost-amount">${money(m.cost.total)}</div>
+          </div>
+        `).join('') : '<div style="color:var(--tertiary)">No token data</div>'}
+        ${c ? `<div class="cost-total"><span>Total</span><span>${money(c.grandTotal)}</span></div>` : ''}
+        ${o && o.savings > 1 ? `<div style="margin-top:10px;text-align:center"><span class="savings-badge">Save ${money(o.savings)} (${o.savingsPercent.toFixed(0)}%) with optimal routing</span></div>` : ''}
+      </div>
+
+      <div class="card">
+        <div class="card-title">Activity by Hour</div>
+        ${renderHourGrid(s.hourCounts)}
+        <div style="margin-top:20px">
+          <div class="card-title" style="margin-bottom:10px">Daily Messages (30d)</div>
+          <div class="spark">${renderSpark(D.dailyChart)}</div>
+        </div>
+        <div style="margin-top:20px">
+          <div class="card-title" style="margin-bottom:10px">Overview</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="font-size:12px;color:var(--tertiary)">Sessions</div>
+            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${$(s.totalSessions)}</div>
+            <div style="font-size:12px;color:var(--tertiary)">Messages</div>
+            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${$(s.totalMessages)}</div>
+            <div style="font-size:12px;color:var(--tertiary)">Avg / Session</div>
+            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${s.totalSessions ? Math.round(s.totalMessages / s.totalSessions) : 0}</div>
+            <div style="font-size:12px;color:var(--tertiary)">Since</div>
+            <div style="font-size:12px;font-weight:600;text-align:right">${s.firstSessionDate ? s.firstSessionDate.slice(0,10) : 'N/A'}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Projects -->
+    <div class="grid-2 anim d4">
+      <div class="card">
+        <div class="card-title"><span>Projects</span><span class="count">${D.projects.length}</span></div>
+        ${D.projects.slice(0, 8).map(p => `
+          <div class="project-row">
+            <div class="project-name">${esc(p.name)}</div>
+            <div class="project-msgs">${$(p.messages)} msgs</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="card">
+        <div class="card-title">Projects by Model Routing</div>
+        ${renderProjectRouting(r)}
+      </div>
+    </div>
+
+    <div class="footer">
+      Token telemetry from ~/.claude/stats-cache.json (${s.lastComputedDate}) &middot;
+      Routing records: ${r.totalTasks} entries &middot; Refreshes every 30s
+    </div>
+  `;
+}
+
+/* ─── Renderers ─────────────────────────────────── */
+
+function renderTimeline(effectiveTab) {
+  if (!DATA) return '';
+  const r = DATA.routing;
+  let entries = effectiveTab === 'today' ? (r.todayStats.tasks || []) : DATA.taskLog;
+
+  if (activeFilter !== 'all') {
+    entries = entries.filter(t => t.model.includes(activeFilter));
+  }
+
+  if (!entries.length) {
+    return `<div style="padding:48px;text-align:center;color:var(--tertiary);font-size:14px">
+      ${effectiveTab === 'today' ? 'No tasks logged today yet' : 'No matching tasks'}
+    </div>`;
+  }
+
+  return (effectiveTab === 'today' ? entries : entries.slice(0, 60)).map(t => {
+    const isDelegation = t.model.includes('>');
+    const time = t.timestamp.slice(11, 16);
+
+    let modelHtml;
+    if (isDelegation) {
+      const [src, tgt] = t.model.split('>');
+      modelHtml = `<span class="model-badge ${badgeClass(src)}">${src}</span>
+        <span class="delegation-arrow">&rarr;</span>
+        <span class="model-badge ${badgeClass(tgt)}">${tgt}</span>`;
+    } else {
+      modelHtml = `<span class="model-badge ${badgeClass(t.model)}">${t.model}</span>`;
+    }
+
+    return `<div class="tl-entry">
+      <div class="tl-time">${time}${effectiveTab === 'all' ? `<span class="tl-date">${t.timestamp.slice(5, 10)}</span>` : ''}</div>
+      <div class="tl-model">${modelHtml}</div>
+      <div class="tl-body">
+        <div class="tl-desc">${esc(t.description)}</div>
+        <div class="tl-meta">
+          <span class="tl-project">${esc(t.project)}</span>
+          <span class="tl-size">${t.size}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setTab(tab) { timelineTab = tab; render(); }
+function setFilter(filter) { activeFilter = filter; render(); }
+
+function renderModelBars(summary) {
+  const entries = Object.entries(summary);
+  const total = entries.reduce((s, [, m]) => s + m.inputTokens + m.outputTokens, 0);
+  if (!total) return '<div style="color:var(--tertiary)">No token data</div>';
+  return entries.map(([tier, m]) => {
+    const pct = ((m.inputTokens + m.outputTokens) / total * 100);
+    return `<div class="bar-item">
+      <span class="bar-name">${tier}</span>
+      <div class="bar-track"><div class="bar-fill fill-${tier}" style="width:${Math.max(pct, 3)}%"></div></div>
+      <span class="bar-count">${pct.toFixed(0)}%</span>
+    </div>`;
+  }).join('');
+}
+
+function renderCacheBar(summary) {
+  let reads = 0, writes = 0, fresh = 0;
+  for (const m of Object.values(summary)) {
+    reads += m.cacheReadInputTokens || 0;
+    writes += m.cacheCreationInputTokens || 0;
+    fresh += m.inputTokens || 0;
+  }
+  const total = reads + writes + fresh;
+  if (!total) return '';
+  return `
+    <div class="bar-item">
+      <span class="bar-name">Cache</span>
+      <div class="bar-track"><div class="bar-fill fill-green" style="width:${reads/total*100}%"></div></div>
+      <span class="bar-count">${(reads/total*100).toFixed(0)}%</span>
+    </div>
+    <div class="bar-item">
+      <span class="bar-name">Fresh</span>
+      <div class="bar-track"><div class="bar-fill fill-orange" style="width:${Math.max(fresh/total*100, 1)}%"></div></div>
+      <span class="bar-count">${(fresh/total*100).toFixed(1)}%</span>
+    </div>`;
+}
+
+function renderRoutingBars(r) {
+  const total = r.totalTasks;
+  if (!total) return '<div style="color:var(--tertiary)">No tasks logged</div>';
+  const counts = { opus: r.directRuns.opus || 0, sonnet: r.directRuns.sonnet || 0, haiku: r.directRuns.haiku || 0, codex: r.directRuns.codex || 0 };
+  for (const [key, val] of Object.entries(r.delegations)) {
+    const target = key.split('>')[1];
+    const tier = ['opus','sonnet','haiku','codex'].find(m => target.includes(m)) || target;
+    counts[tier] = (counts[tier] || 0) + val;
+  }
+  return ['opus','sonnet','haiku','codex'].filter(m => counts[m] > 0).map(m => {
+    const pct = counts[m] / total * 100;
+    return `<div class="bar-item">
+      <span class="bar-name">${m}</span>
+      <div class="bar-track"><div class="bar-fill fill-${m}" style="width:${Math.max(pct, 3)}%"></div></div>
+      <span class="bar-count">${counts[m]}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderProjectRouting(r) {
+  const projects = Object.entries(r.byProject).sort((a, b) => b[1].total - a[1].total).slice(0, 8);
+  if (!projects.length) return '<div style="color:var(--tertiary)">No data</div>';
+  return projects.map(([name, stats]) => {
+    const t = stats.total;
+    return `<div class="routing-bar-row">
+      <div style="font-size:13px;font-weight:600;width:100px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</div>
+      <div class="routing-bar-stack">
+        ${stats.opus > 0 ? `<div style="width:${stats.opus/t*100}%;background:var(--purple);border-radius:3px"></div>` : ''}
+        ${stats.sonnet > 0 ? `<div style="width:${stats.sonnet/t*100}%;background:var(--blue);border-radius:3px"></div>` : ''}
+        ${stats.haiku > 0 ? `<div style="width:${stats.haiku/t*100}%;background:var(--teal);border-radius:3px"></div>` : ''}
+        ${stats.codex > 0 ? `<div style="width:${stats.codex/t*100}%;background:var(--amber);border-radius:3px"></div>` : ''}
+      </div>
+      <div style="font-size:11px;color:var(--tertiary);width:36px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums">${t}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderHourGrid(hours) {
+  const isDark = getTheme() === 'dark';
+  const max = Math.max(...Object.values(hours), 1);
+  let html = '<div class="hour-grid">';
+  for (let h = 0; h < 24; h++) {
+    const count = hours[String(h)] || 0;
+    const intensity = count / max;
+    const bg = intensity === 0 ? 'var(--border)'
+      : isDark ? `rgba(108, 180, 255, ${0.1 + intensity * 0.65})`
+      : `rgba(0, 96, 194, ${0.1 + intensity * 0.75})`;
+    html += `<div class="hour-cell" style="background:${bg}" title="${h}:00 — ${count} sessions"></div>`;
+  }
+  html += '</div><div class="hour-labels"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span></div>';
+  return html;
+}
+
+function renderSpark(daily) {
+  if (!daily.length) return '';
+  const max = Math.max(...daily.map(d => d.messages), 1);
+  return daily.map(d => {
+    const h = Math.max((d.messages / max) * 100, 2);
+    return `<div class="spark-bar" style="height:${h}%;opacity:${0.3 + (d.messages/max)*0.7}" title="${d.date}: ${d.messages} msgs"></div>`;
+  }).join('');
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

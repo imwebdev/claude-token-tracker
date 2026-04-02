@@ -1,0 +1,19 @@
+{
+  "name": "claude-token-tracker",
+  "version": "1.0.0",
+  "description": "Token usage dashboard and efficiency tracker for Claude Code",
+  "main": "src/server.js",
+  "bin": {
+    "claude-tokens": "./bin/cli.js",
+    "token-coach": "./bin/cli.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "keywords": ["claude", "claude-code", "tokens", "usage", "dashboard"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

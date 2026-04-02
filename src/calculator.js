@@ -1,0 +1,164 @@
+/**
+ * Token cost calculator based on Anthropic pricing.
+ * Prices in USD per million tokens.
+ */
+
+const PRICING = {
+  'claude-opus-4-6': {
+    input: 15.00,
+    output: 75.00,
+    cacheRead: 1.50,
+    cacheWrite: 18.75,
+  },
+  'claude-opus-4-5-20251101': {
+    input: 15.00,
+    output: 75.00,
+    cacheRead: 1.50,
+    cacheWrite: 18.75,
+  },
+  'claude-sonnet-4-5-20250929': {
+    input: 3.00,
+    output: 15.00,
+    cacheRead: 0.30,
+    cacheWrite: 3.75,
+  },
+  'claude-sonnet-4-6': {
+    input: 3.00,
+    output: 15.00,
+    cacheRead: 0.30,
+    cacheWrite: 3.75,
+  },
+  'claude-haiku-4-5-20251001': {
+    input: 1.00,
+    output: 5.00,
+    cacheRead: 0.10,
+    cacheWrite: 1.25,
+  },
+};
+
+// Map short names to full model IDs
+const MODEL_ALIASES = {
+  opus: 'claude-opus-4-6',
+  sonnet: 'claude-sonnet-4-6',
+  haiku: 'claude-haiku-4-5-20251001',
+};
+
+function getModelPrice(modelId) {
+  if (!modelId) return PRICING['claude-opus-4-6'];
+  // Try exact match first
+  if (PRICING[modelId]) return PRICING[modelId];
+  // Try alias
+  if (MODEL_ALIASES[modelId] && PRICING[MODEL_ALIASES[modelId]]) {
+    return PRICING[MODEL_ALIASES[modelId]];
+  }
+  // Fuzzy match
+  if (modelId.includes('opus')) return PRICING['claude-opus-4-6'];
+  if (modelId.includes('sonnet')) return PRICING['claude-sonnet-4-6'] || PRICING['claude-sonnet-4-5-20250929'];
+  if (modelId.includes('haiku')) return PRICING['claude-haiku-4-5-20251001'];
+  return PRICING['claude-opus-4-6']; // default to most expensive
+}
+
+function getModelTier(modelId) {
+  if (!modelId) return 'unknown';
+  if (modelId.includes('opus')) return 'opus';
+  if (modelId.includes('sonnet')) return 'sonnet';
+  if (modelId.includes('haiku')) return 'haiku';
+  if (modelId.includes('codex')) return 'codex';
+  return 'unknown';
+}
+
+/** Calculate cost for a model's usage stats */
+function calculateModelCost(modelId, stats) {
+  const price = getModelPrice(modelId);
+  const m = 1_000_000;
+
+  return {
+    input: (stats.inputTokens / m) * price.input,
+    output: (stats.outputTokens / m) * price.output,
+    cacheRead: (stats.cacheReadInputTokens / m) * price.cacheRead,
+    cacheWrite: (stats.cacheCreationInputTokens / m) * price.cacheWrite,
+    total: 0, // calculated below
+  };
+}
+
+/** Calculate total costs from stats-cache modelUsage */
+function calculateTotalCosts(modelUsage) {
+  const costs = {};
+  let grandTotal = 0;
+
+  for (const [modelId, stats] of Object.entries(modelUsage)) {
+    const cost = calculateModelCost(modelId, stats);
+    cost.total = cost.input + cost.output + cost.cacheRead + cost.cacheWrite;
+    costs[modelId] = cost;
+    grandTotal += cost.total;
+  }
+
+  return { byModel: costs, grandTotal };
+}
+
+/** Calculate what the cost WOULD have been if tasks were optimally routed */
+function calculateOptimalCost(modelUsage) {
+  // If everything ran on the cheapest model that could handle it
+  // Rough estimate: 60% of opus work could be sonnet, 30% could be haiku
+  let currentTotal = 0;
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalCacheRead = 0;
+  let totalCacheWrite = 0;
+
+  for (const [modelId, stats] of Object.entries(modelUsage)) {
+    const cost = calculateModelCost(modelId, stats);
+    currentTotal += cost.input + cost.output + cost.cacheRead + cost.cacheWrite;
+    totalInput += stats.inputTokens;
+    totalOutput += stats.outputTokens;
+    totalCacheRead += stats.cacheReadInputTokens;
+    totalCacheWrite += stats.cacheCreationInputTokens;
+  }
+
+  // Optimal: 30% opus, 40% sonnet, 30% haiku
+  const opusPrice = getModelPrice('claude-opus-4-6');
+  const sonnetPrice = getModelPrice('claude-sonnet-4-6');
+  const haikuPrice = getModelPrice('claude-haiku-4-5-20251001');
+  const m = 1_000_000;
+
+  const optimalCost =
+    (totalInput * 0.3 / m * opusPrice.input) +
+    (totalInput * 0.4 / m * sonnetPrice.input) +
+    (totalInput * 0.3 / m * haikuPrice.input) +
+    (totalOutput * 0.3 / m * opusPrice.output) +
+    (totalOutput * 0.4 / m * sonnetPrice.output) +
+    (totalOutput * 0.3 / m * haikuPrice.output) +
+    (totalCacheRead * 0.3 / m * opusPrice.cacheRead) +
+    (totalCacheRead * 0.4 / m * sonnetPrice.cacheRead) +
+    (totalCacheRead * 0.3 / m * haikuPrice.cacheRead) +
+    (totalCacheWrite * 0.3 / m * opusPrice.cacheWrite) +
+    (totalCacheWrite * 0.4 / m * sonnetPrice.cacheWrite) +
+    (totalCacheWrite * 0.3 / m * haikuPrice.cacheWrite);
+
+  return {
+    current: currentTotal,
+    optimal: optimalCost,
+    savings: currentTotal - optimalCost,
+    savingsPercent: currentTotal > 0 ? ((currentTotal - optimalCost) / currentTotal * 100) : 0,
+  };
+}
+
+/** Estimate session cost based on message count (rough) */
+function estimateSessionCost(messageCount, model = 'opus') {
+  // Average ~2000 input tokens + ~500 output tokens per message
+  const price = getModelPrice(model);
+  const m = 1_000_000;
+  const inputTokens = messageCount * 2000;
+  const outputTokens = messageCount * 500;
+  return ((inputTokens / m) * price.input) + ((outputTokens / m) * price.output);
+}
+
+module.exports = {
+  PRICING,
+  getModelPrice,
+  getModelTier,
+  calculateModelCost,
+  calculateTotalCosts,
+  calculateOptimalCost,
+  estimateSessionCost,
+};

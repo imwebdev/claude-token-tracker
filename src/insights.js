@@ -1,0 +1,244 @@
+const { getModelTier, estimateSessionCost, calculateTotalCosts, calculateOptimalCost } = require('./calculator');
+const { detectWaste } = require('./waste');
+
+/**
+ * Generate actionable insights from Claude Code usage data.
+ * Each insight has: severity (critical|warning|info|success), title, detail, action
+ */
+function generateInsights(data) {
+  const insights = [];
+  const { stats, history, sessions, dailyLogs, taskLog, projects, mcpServers } = data;
+  const runWaste = detectWaste(data.runs || []);
+
+  if (!stats) {
+    insights.push({
+      severity: 'critical',
+      title: 'No usage data found',
+      detail: 'stats-cache.json is missing. Claude Code may not have been used yet or the cache has not been generated.',
+      action: 'Run a Claude Code session to generate usage data.',
+    });
+    return insights;
+  }
+
+  if (runWaste.length > 0) {
+    const overRouting = runWaste.filter(f => f.type === 'over-routing').length;
+    const escalations = runWaste.filter(f => f.type === 'escalation').length;
+    if (overRouting > 0 || escalations > 0) {
+      insights.push({
+        severity: 'warning',
+        title: `${overRouting + escalations} routing inefficiencies detected`,
+        detail: `${overRouting} potential over-routing cases and ${escalations} escalations found in Token Coach runs.`,
+        action: 'Inspect `claude-tokens audit` and tighten routing policy for repeated misses.',
+      });
+    }
+  }
+
+  // ─── Session Length Analysis ────────────────────────────────
+  const dailyActivity = stats.dailyActivity || [];
+  const longSessionDays = dailyActivity.filter(d => d.messageCount > 500 && d.sessionCount <= 2);
+
+  if (longSessionDays.length > 0) {
+    const worst = longSessionDays.reduce((a, b) => a.messageCount > b.messageCount ? a : b);
+    insights.push({
+      severity: 'critical',
+      title: 'Marathon sessions detected',
+      detail: `${longSessionDays.length} days had 500+ messages in 1-2 sessions. Worst: ${worst.messageCount} messages on ${worst.date}. Long sessions balloon the context window — every message re-sends the entire conversation history.`,
+      action: 'Break work into focused sessions of 15-25 messages. Use /compact or start fresh sessions for new tasks. Target: 5+ sessions per active day.',
+    });
+  }
+
+  if (stats.longestSession) {
+    const ls = stats.longestSession;
+    const hours = Math.round(ls.duration / 3600000);
+    if (ls.messageCount > 200) {
+      const estCost = estimateSessionCost(ls.messageCount, 'opus');
+      insights.push({
+        severity: 'warning',
+        title: `Longest session: ${ls.messageCount} messages over ${hours}h`,
+        detail: `Session ${ls.sessionId.slice(0, 8)}... on ${new Date(ls.timestamp).toLocaleDateString()}. Estimated cost: $${estCost.toFixed(2)}. After ~30 messages, context compaction kicks in and you lose earlier context anyway.`,
+        action: 'No single session should exceed 50 messages. If you hit 20, evaluate whether to /compact or start fresh.',
+      });
+    }
+  }
+
+  // ─── Model Routing Efficiency ──────────────────────────────
+  const modelUsage = stats.modelUsage || {};
+  const totalTokens = Object.values(modelUsage).reduce((sum, m) =>
+    sum + m.inputTokens + m.outputTokens, 0);
+
+  const modelShares = {};
+  for (const [model, usage] of Object.entries(modelUsage)) {
+    const tier = getModelTier(model);
+    const tokens = usage.inputTokens + usage.outputTokens;
+    modelShares[tier] = (modelShares[tier] || 0) + tokens;
+  }
+
+  const opusPct = totalTokens > 0 ? (modelShares.opus || 0) / totalTokens * 100 : 0;
+  const sonnetPct = totalTokens > 0 ? (modelShares.sonnet || 0) / totalTokens * 100 : 0;
+  const haikuPct = totalTokens > 0 ? (modelShares.haiku || 0) / totalTokens * 100 : 0;
+
+  if (opusPct > 80) {
+    insights.push({
+      severity: 'critical',
+      title: `${opusPct.toFixed(0)}% of tokens go to Opus`,
+      detail: `Model split: Opus ${opusPct.toFixed(0)}%, Sonnet ${sonnetPct.toFixed(0)}%, Haiku ${haikuPct.toFixed(0)}%. Opus is 5x more expensive than Sonnet and 15x more than Haiku. Most file searches, small edits, and planning tasks don't need Opus.`,
+      action: 'Target ratio: 30% Opus (complex tasks), 40% Sonnet (edits, reviews), 30% Haiku (search, exploration). Use subagents with model: "haiku" or "sonnet" for appropriate tasks.',
+    });
+  } else if (opusPct > 60) {
+    insights.push({
+      severity: 'warning',
+      title: `Opus usage at ${opusPct.toFixed(0)}% — room to optimize`,
+      detail: `Current: Opus ${opusPct.toFixed(0)}%, Sonnet ${sonnetPct.toFixed(0)}%, Haiku ${haikuPct.toFixed(0)}%.`,
+      action: 'Push more exploration and small edit tasks to Sonnet/Haiku subagents.',
+    });
+  } else {
+    insights.push({
+      severity: 'success',
+      title: 'Good model routing',
+      detail: `Opus ${opusPct.toFixed(0)}%, Sonnet ${sonnetPct.toFixed(0)}%, Haiku ${haikuPct.toFixed(0)}%. You're distributing work across tiers.`,
+      action: 'Keep it up. Monitor weekly to prevent drift.',
+    });
+  }
+
+  // ─── Cost Analysis ─────────────────────────────────────────
+  const costs = calculateTotalCosts(modelUsage);
+  const optimal = calculateOptimalCost(modelUsage);
+
+  if (optimal.savings > 5) {
+    insights.push({
+      severity: 'warning',
+      title: `Estimated $${optimal.savings.toFixed(2)} in potential savings (${optimal.savingsPercent.toFixed(0)}%)`,
+      detail: `Current estimated spend: $${optimal.current.toFixed(2)}. With optimal model routing (30/40/30 split): $${optimal.optimal.toFixed(2)}.`,
+      action: 'Route search/read tasks to Haiku, edits/reviews to Sonnet, only complex multi-file work to Opus.',
+    });
+  }
+
+  // ─── Cache Efficiency ──────────────────────────────────────
+  let totalCacheRead = 0;
+  let totalCacheWrite = 0;
+  let totalInput = 0;
+
+  for (const usage of Object.values(modelUsage)) {
+    totalCacheRead += usage.cacheReadInputTokens;
+    totalCacheWrite += usage.cacheCreationInputTokens;
+    totalInput += usage.inputTokens;
+  }
+
+  const cacheRatio = totalInput > 0 ? totalCacheRead / (totalInput + totalCacheRead) * 100 : 0;
+
+  if (cacheRatio > 99) {
+    insights.push({
+      severity: 'info',
+      title: `${cacheRatio.toFixed(1)}% cache hit rate`,
+      detail: `${(totalCacheRead / 1e9).toFixed(1)}B cache reads vs ${(totalInput / 1e6).toFixed(1)}M fresh input tokens. High cache rate means long conversations are re-sending previous context — this is expected but expensive at scale.`,
+      action: 'Shorter sessions = less context re-sent = fewer cache reads. Each message in a 100-msg conversation re-sends ~100K tokens of cached context.',
+    });
+  }
+
+  // ─── Activity Patterns ─────────────────────────────────────
+  const hourCounts = stats.hourCounts || {};
+  const totalHourMsgs = Object.values(hourCounts).reduce((a, b) => a + b, 0);
+  const lateNight = (hourCounts['0'] || 0) + (hourCounts['1'] || 0) + (hourCounts['2'] || 0) +
+    (hourCounts['3'] || 0) + (hourCounts['4'] || 0) + (hourCounts['5'] || 0);
+  const lateNightPct = totalHourMsgs > 0 ? lateNight / totalHourMsgs * 100 : 0;
+
+  if (lateNightPct > 30) {
+    insights.push({
+      severity: 'warning',
+      title: `${lateNightPct.toFixed(0)}% of work happens between midnight and 6am`,
+      detail: 'Late-night sessions tend to be longer, less focused, and burn more tokens. Fatigue leads to vague prompts that require more back-and-forth.',
+      action: 'Consider batching late-night work into focused morning sessions with clear task lists.',
+    });
+  }
+
+  // ─── Messages per session efficiency ───────────────────────
+  if (stats.totalSessions > 0 && stats.totalMessages > 0) {
+    const avgMsgsPerSession = stats.totalMessages / stats.totalSessions;
+    if (avgMsgsPerSession > 100) {
+      insights.push({
+        severity: 'warning',
+        title: `Average ${Math.round(avgMsgsPerSession)} messages per session`,
+        detail: `${stats.totalMessages.toLocaleString()} total messages across ${stats.totalSessions.toLocaleString()} sessions. Each message after ~30 re-sends the entire context window.`,
+        action: 'Target 15-25 messages per session. Start new sessions for new tasks. Use /compact at the 20-message mark.',
+      });
+    } else if (avgMsgsPerSession < 30) {
+      insights.push({
+        severity: 'success',
+        title: `Healthy session length: avg ${Math.round(avgMsgsPerSession)} messages`,
+        detail: 'Short, focused sessions keep context costs low.',
+        action: 'Keep it up.',
+      });
+    }
+  }
+
+  // ─── MCP Server Analysis ───────────────────────────────────
+  if (mcpServers) {
+    for (const [projectName, serverInfo] of Object.entries(mcpServers)) {
+      const { enabled, disabled, projectPath } = serverInfo;
+      if (enabled.length > 5) {
+        insights.push({
+          severity: 'warning',
+          title: `${projectName}: ${enabled.length} MCP servers active`,
+          detail: `Active servers: ${enabled.join(', ')}. Each MCP server adds tool definitions to the system prompt, consuming tokens on every message. Disabled: ${disabled.length > 0 ? disabled.join(', ') : 'none'}.`,
+          action: `Disable unused MCP servers in ${projectPath}/.claude/settings.json → disabledMcpServers. Only keep servers this project actually uses.`,
+        });
+      }
+    }
+  }
+
+  // ─── Rate Limit Analysis ───────────────────────────────────
+  if (dailyLogs) {
+    const errorDays = Object.entries(dailyLogs.errors || {}).filter(([, count]) => count > 0);
+    if (errorDays.length > 3) {
+      const totalErrors = errorDays.reduce((sum, [, c]) => sum + c, 0);
+      insights.push({
+        severity: 'warning',
+        title: `${totalErrors} rate limits across ${errorDays.length} days`,
+        detail: 'Rate limits mean you hit the token ceiling. This usually happens in long sessions with rapid-fire messages.',
+        action: 'Space out intense work. Use Sonnet/Haiku for lower-priority tasks to stay under Opus rate limits.',
+      });
+    }
+  }
+
+  // ─── Task Log Analysis ─────────────────────────────────────
+  if (taskLog && taskLog.length > 0) {
+    const sizeCounts = { S: 0, M: 0, L: 0 };
+    const modelCounts = {};
+    for (const t of taskLog) {
+      sizeCounts[t.size] = (sizeCounts[t.size] || 0) + 1;
+      modelCounts[t.model] = (modelCounts[t.model] || 0) + 1;
+    }
+
+    const largeTaskPct = taskLog.length > 0 ? (sizeCounts.L || 0) / taskLog.length * 100 : 0;
+    if (largeTaskPct > 40) {
+      insights.push({
+        severity: 'warning',
+        title: `${largeTaskPct.toFixed(0)}% of logged tasks are size L`,
+        detail: 'Large tasks consume the most tokens. Breaking them into smaller pieces gives you more control and reduces context bloat.',
+        action: 'Break L tasks into 2-3 M tasks. Use /plan before starting to identify independent subtasks that can run as subagents.',
+      });
+    }
+  }
+
+  // ─── Staleness Check ──────────────────────────────────────
+  if (stats.lastComputedDate) {
+    const lastDate = new Date(stats.lastComputedDate);
+    const daysSinceUpdate = Math.floor((Date.now() - lastDate.getTime()) / 86400000);
+    if (daysSinceUpdate > 7) {
+      insights.push({
+        severity: 'info',
+        title: `Stats cache is ${daysSinceUpdate} days old`,
+        detail: `Last computed: ${stats.lastComputedDate}. Token data may not reflect recent usage. The cache updates when Claude Code's internal stats computation runs.`,
+        action: 'Recent sessions may not be reflected in cost estimates. Daily logs and task log are always current.',
+      });
+    }
+  }
+
+  // Sort: critical first, then warning, info, success
+  const order = { critical: 0, warning: 1, info: 2, success: 3 };
+  insights.sort((a, b) => order[a.severity] - order[b.severity]);
+
+  return insights;
+}
+
+module.exports = { generateInsights };
