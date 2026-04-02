@@ -4,8 +4,6 @@ Claude Token Tracker is a standalone local router, benchmarker, and audit layer 
 
 It chooses the lowest-cost model likely to succeed, executes the task, records what actually happened, and shows you where tokens are being wasted.
 
-If you want a stronger product-style name later, `Routewise` is a good option. For GitHub and clarity, `Claude Token Tracker` is still solid and direct.
-
 ## What It Does
 
 - Routes tasks to the cheapest reasonable model first
