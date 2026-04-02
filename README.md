@@ -1,317 +1,139 @@
 # Claude Token Tracker
 
-Claude Token Tracker is a standalone local router, benchmarker, and audit layer for Claude Code.
+Local model router, cost calculator, and waste auditor for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
 
-It chooses the lowest-cost model likely to succeed, executes the task, records what actually happened, and shows you where tokens are being wasted.
+Classifies tasks by keyword, recommends the cheapest model (haiku/sonnet/opus), optionally executes via the Claude CLI with automatic escalation on failure, and records every run to a file-based ledger. A local dashboard shows cost breakdowns, routing patterns, and waste.
 
-## What It Does
-
-- Routes tasks to the cheapest reasonable model first
-- Executes tasks through the local Claude CLI
-- Escalates only when validation says a stronger model is needed
-- Stores its own run history outside any single project
-- Benchmarks recommended model vs actual model usage
-- Audits waste patterns so you can fix token burn
-- Serves a local dashboard for visibility
-
-## Why This Exists
-
-Most people use expensive models too often because they do not have:
-
-- a consistent routing policy
-- a record of what should have been used
-- proof of what was actually used
-- feedback loops for waste, retries, and over-routing
-
-Claude Token Tracker closes that loop.
-
-It is not just a dashboard. It is a control layer.
-
-## Core Idea
-
-For every task, Claude Token Tracker does this:
-
-1. Classifies the task
-2. Recommends a starting model
-3. Executes the task
-4. Validates the outcome
-5. Escalates only if needed
-6. Records the full run
-7. Updates benchmarks and audit findings
-
-The goal is simple:
-
-**Best acceptable quality at the lowest token cost**
-
-## Standalone Storage
-
-This tool does not use a database.
-
-All state lives in:
-
-`~/.token-coach/`
-
-Structure:
-
-```text
-~/.token-coach/
-  config.json
-  runs/
-  events/
-  benchmarks/
-  reports/
-  projects/
-  cache/
-```
-
-You can override the storage root for testing:
-
-```bash
-TOKEN_COACH_HOME=/tmp/token-coach-test
-```
-
-## Current Capabilities
-
-- File-based run ledger
-- Event log per day
-- Task classification
-- Model recommendation
-- CLI execution through `claude -p`
-- Validation of execution outcomes
-- Benchmark generation
-- Waste auditing
-- Local dashboard API and UI
-
-## Project Structure
-
-Key files:
-
-- `bin/cli.js` — CLI entrypoint
-- `src/run-command.js` — routing and execution flow
-- `src/router.js` — task classification and model policy
-- `src/validator.js` — execution validation
-- `src/escalation.js` — escalation rules
-- `src/ledger.js` — run and event persistence
-- `src/storage.js` — JSON and JSONL storage helpers
-- `src/data-home.js` — standalone storage paths
-- `src/benchmarks.js` — benchmark generation
-- `src/waste.js` — waste detection
-- `src/server.js` — dashboard API and server
-- `public/index.html` — dashboard UI
-
-## Installation
-
-Requirements:
+## Requirements
 
 - Node.js 18+
-- Claude CLI installed and authenticated
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (required for `run --execute` and for dashboard data)
 
-Clone the repo:
+## Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/imwebdev/claude-token-tracker.git
 cd claude-token-tracker
 ```
 
-Run it directly:
+No `npm install` needed — zero dependencies.
+
+Run directly:
 
 ```bash
-node ./bin/cli.js
+node bin/cli.js
 ```
 
-If you want the CLI name available globally, link it:
+Or link globally for the `claude-tokens` / `token-coach` commands:
 
 ```bash
 npm link
 ```
 
-Then use either:
-
-```bash
-claude-tokens
-token-coach
-```
-
 ## Commands
 
-### Summary
-
-Reads Claude usage cache and prints a token summary:
+All commands work as `node bin/cli.js <command>` or `claude-tokens <command>` after linking.
 
 ```bash
+# Print token usage summary (default)
 claude-tokens
-```
 
-### Run
-
-Routes and runs a task:
-
-```bash
-claude-tokens run --execute "update sample.txt and replace alpha with beta"
-```
-
-Route only, without execution:
-
-```bash
+# Route a task to the recommended model (dry run, no execution)
 claude-tokens run "search for duplicate route definitions"
-```
 
-### Benchmark
+# Route AND execute via Claude CLI
+claude-tokens run --execute "fix the failing import in app.ts"
 
-Shows benchmark data from recorded runs:
-
-```bash
-claude-tokens benchmark
-```
-
-### Audit
-
-Shows waste findings:
-
-```bash
-claude-tokens audit
-```
-
-### Insights
-
-Shows usage insights from Claude data plus run history:
-
-```bash
-claude-tokens insights
-```
-
-### Costs
-
-Shows model cost breakdown:
-
-```bash
+# Cost breakdown by model
 claude-tokens costs
-```
 
-### Dashboard
+# Actionable usage insights
+claude-tokens insights
 
-Starts the local dashboard:
+# Benchmark data from recorded runs
+claude-tokens benchmark
 
-```bash
+# Waste audit (over-routing, unnecessary escalation)
+claude-tokens audit
+
+# Start the dashboard on http://localhost:6099
 claude-tokens dashboard
 ```
 
-Default URL:
+## How It Works
 
-```text
-http://localhost:6099
-```
+1. **Classify** — keyword-based rules assign a task family (`search_read`, `code_edit`, `debug`, `review`, `plan`, `command`) and complexity level
+2. **Recommend** — maps family + complexity to a model: haiku for search/read, sonnet for bounded edits, opus for complex reasoning
+3. **Execute** (with `--execute`) — spawns `claude -p` with the recommended model, snapshots files before/after to detect changes
+4. **Validate** — checks exit code, output length, file changes, stderr for errors
+5. **Escalate** — if validation fails, moves up the fallback chain (haiku -> sonnet -> opus)
+6. **Record** — saves the full run (classification, recommendation, attempts, outcome) to `~/.token-coach/`
 
-## How Routing Works
-
-The router currently uses a rule-based policy.
-
-Examples:
-
-- search, discovery, narrow reading: prefer `haiku`
-- bounded edits and focused implementation: prefer `sonnet`
-- broader reasoning, planning, debugging, or synthesis: prefer `opus`
-
-The recommendation is recorded on every run alongside:
-
-- task family
-- complexity
-- fallback chain
-- execution mode
-- validation result
-- final model used
-
-## Benchmarking
-
-Benchmarks compare:
-
-- recommended model
-- executed model
-- success rate
-- escalation rate
-- route-only vs executed runs
-
-This gives you the basis for tuning your routing policy instead of guessing.
-
-Example output:
-
-```text
-Token Coach — Benchmarks
-
-code_edit/sonnet
-  runs: 1  executed: 1  success: 100%  escalations: 0%  route-only: 0
-```
-
-## Waste Auditing
-
-The audit layer is designed to catch avoidable spend, including:
-
-- over-routing
-- unnecessary escalation
-- repeated failed execution paths
-- route-only runs with no real execution history yet
-
-This is the mechanism that turns token usage into something actionable.
+Without `--execute`, it records the routing recommendation only.
 
 ## Dashboard
 
-The dashboard surfaces:
+The dashboard reads from two sources:
 
-- routing history
-- benchmark summaries
-- model distribution
-- insights
-- project activity
-- token and cost information
+- **Claude Code data** (`~/.claude/`) — session history, token usage stats, model usage, daily activity. This is populated by normal Claude Code usage.
+- **Token Coach ledger** (`~/.token-coach/`) — routing runs, benchmarks, events. Populated when you use `claude-tokens run`.
 
-The long-term source of truth is the Token Coach ledger, not a repo-local CSV.
+If you haven't used Claude Code yet, the dashboard will be mostly empty.
 
-## Example Workflow
+Start it:
 
 ```bash
-claude-tokens run --execute "fix the failing import in app.ts"
-claude-tokens benchmark
-claude-tokens audit
 claude-tokens dashboard
+# or
+node src/server.js
 ```
 
-This gives you:
+Default port is 6099. Override with `PORT=8080 node src/server.js`.
 
-- the routed execution
-- the recorded outcome
-- updated benchmark data
-- an audit view of waste and routing quality
+## Storage
 
-## Promotion Angle
+All Token Coach state is stored as flat JSON/JSONL files under `~/.token-coach/`:
 
-If you are putting this on GitHub, the clean pitch is:
+```
+~/.token-coach/
+  config.json
+  runs/          # Run records organized by year/month/day
+  events/        # Event log (JSONL) by day
+  benchmarks/    # Aggregated benchmark data
+  reports/
+  projects/
+  cache/
+```
 
-> Claude Token Tracker is an autonomous model router for Claude Code. It picks the cheapest model that can do the job, executes the work, benchmarks actual usage, and shows where tokens are being wasted.
+Override the location:
 
-Shorter version:
+```bash
+export TOKEN_COACH_HOME=/path/to/custom/dir
+```
 
-> Stop guessing which Claude model to use. Route it, run it, benchmark it.
+## Project Structure
 
-## Current Status
-
-This system is working now as a standalone file-based router and benchmarker.
-
-Verified behavior includes:
-
-- routed execution through the local Claude CLI
-- actual file edits performed through Token Coach
-- standalone run storage under Token Coach home
-- benchmark generation from executed runs
-- dashboard data built from ledger-backed runs
-
-## Roadmap
-
-- richer validation by task family
-- stronger waste heuristics
-- clearer recommended-vs-actual dashboard views
-- better token and latency capture per attempt
-- configurable routing policies
-- project-specific overrides
+```
+bin/cli.js              CLI entrypoint, dispatches to command handlers
+src/
+  router.js             Task classification and model recommendation
+  run-command.js         Orchestrates execution, file snapshots, escalation
+  validator.js           Checks execution results
+  escalation.js          Fallback chain logic (haiku -> sonnet -> opus)
+  ledger.js              Run/event persistence to ~/.token-coach/
+  storage.js             JSON/JSONL file helpers
+  data-home.js           Resolves ~/.token-coach/ paths
+  parser.js              Reads Claude Code data from ~/.claude/
+  calculator.js          Token cost math (Anthropic pricing)
+  insights.js            Generates actionable recommendations
+  benchmarks.js          Aggregates run data into benchmarks
+  waste.js               Detects over-routing and waste patterns
+  server.js              Dashboard HTTP server + /api/dashboard endpoint
+  audit-command.js       CLI audit output
+  benchmark-command.js   CLI benchmark output
+public/
+  index.html             Dashboard single-page UI
+```
 
 ## License
 
