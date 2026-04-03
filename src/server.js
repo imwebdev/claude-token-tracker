@@ -153,9 +153,33 @@ function buildDashboardData() {
   const liveHourCounts = {};
   for (const ev of recentEvents) {
     if (!ev.ts) continue;
-    // Parse local time from our local ISO strings
     const hour = String(new Date(ev.ts).getHours());
     liveHourCounts[hour] = (liveHourCounts[hour] || 0) + 1;
+  }
+
+  // Merge hook events into today stats (hooks are the source of truth for routing)
+  const todayEvents = recentEvents.filter(e => e.ts && e.ts.startsWith(todayStr));
+  const todayDecisions = todayEvents.filter(e => e.type === 'routing_decision');
+  const todayDispatches = todayEvents.filter(e => e.type === 'subagent_dispatch');
+
+  const hookTodayModels = { opus: 0, sonnet: 0, haiku: 0, codex: 0 };
+  for (const d of todayDecisions) {
+    const rec = d.recommended_model || 'sonnet';
+    hookTodayModels[rec] = (hookTodayModels[rec] || 0) + 1;
+  }
+
+  // Override today stats with hook data when hook data is richer
+  if (todayDecisions.length > (routing.todayStats?.totalTasks || 0)) {
+    routing.todayStats = {
+      ...routing.todayStats,
+      date: todayStr,
+      totalTasks: todayDecisions.length,
+      models: hookTodayModels,
+      delegations: todayDispatches.length,
+      tasks: routing.todayStats?.tasks || [],
+    };
+    routing.delegationRate = todayDecisions.length > 0
+      ? (todayDispatches.length / todayDecisions.length * 100) : 0;
   }
 
   return {
