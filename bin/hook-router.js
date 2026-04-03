@@ -94,7 +94,7 @@ function handleUserPromptSubmit(input) {
 
   // Inject routing guidance as additional context
   const ctx = [
-    `[TOKEN COACH] Task classified: ${classification.family} (${classification.complexity} complexity, ${confidence} confidence).`,
+    `[claude-token-tracker] Task classified: ${classification.family} (${classification.complexity} complexity, ${confidence} confidence).`,
     `Recommended model: ${recommendation.model.toUpperCase()}.`,
     `Reason: ${recommendation.reasons.join('; ')}.`,
   ];
