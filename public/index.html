@@ -583,13 +583,16 @@ function renderRoutingDecisions(re) {
   // Stats strip
   const total = stats.total || 0;
   const rec = stats.byRecommended || {};
-  const overridden = stats.overridden || 0;
+  const delegated = stats.delegated || 0;
+  const delegationRate = stats.delegationRate || 0;
+  const optimal = stats.optimal || 0;
+  const suboptimal = stats.suboptimal || 0;
 
   let html = `
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px">
       <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
         <div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums">${total}</div>
-        <div style="font-size:11px;color:var(--tertiary)">Decisions</div>
+        <div style="font-size:11px;color:var(--tertiary)">Prompts</div>
       </div>
       <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
         <div style="font-size:20px;font-weight:700;color:var(--haiku);font-variant-numeric:tabular-nums">${rec.haiku || 0}</div>
@@ -604,8 +607,12 @@ function renderRoutingDecisions(re) {
         <div style="font-size:11px;color:var(--tertiary)">→ Opus</div>
       </div>
       <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
-        <div style="font-size:20px;font-weight:700;color:${overridden > 0 ? '#f59e0b' : 'var(--success)'};font-variant-numeric:tabular-nums">${overridden}</div>
-        <div style="font-size:11px;color:var(--tertiary)">Overrides</div>
+        <div style="font-size:20px;font-weight:700;color:${delegated > 0 ? 'var(--success)' : '#f59e0b'};font-variant-numeric:tabular-nums">${delegated}</div>
+        <div style="font-size:11px;color:var(--tertiary)">Dispatched</div>
+      </div>
+      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:${delegationRate > 25 ? 'var(--success)' : '#f59e0b'};font-variant-numeric:tabular-nums">${delegationRate}%</div>
+        <div style="font-size:11px;color:var(--tertiary)">Delegation</div>
       </div>
     </div>
   `;

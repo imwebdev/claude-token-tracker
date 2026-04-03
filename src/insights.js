@@ -25,6 +25,7 @@ function generateInsights(data) {
       const optPct = routingStats.optimal > 0
         ? Math.round(routingStats.optimal / routingStats.delegated * 100) : 0;
       insights.push({
+        _live: true,
         severity: optPct >= 80 ? 'success' : optPct >= 50 ? 'info' : 'warning',
         title: `${routingStats.delegated} subagent dispatches (${optPct}% optimal)`,
         detail: `Dispatches by model: Haiku ${routingStats.dispatches.haiku}, Sonnet ${routingStats.dispatches.sonnet}, Opus ${routingStats.dispatches.opus}. ${routingStats.suboptimal} used a more expensive model than recommended.`,
@@ -34,6 +35,7 @@ function generateInsights(data) {
       });
     } else if (recHaiku + recSonnet > 0) {
       insights.push({
+        _live: true,
         severity: 'warning',
         title: `0 delegations despite ${recHaiku + recSonnet} sub-opus recommendations`,
         detail: `Token Coach recommended Haiku ${recHaiku} times and Sonnet ${recSonnet} times, but no subagent dispatches were recorded. All work is running on the primary model.`,
@@ -43,6 +45,7 @@ function generateInsights(data) {
 
     // Recommendation distribution
     insights.push({
+      _live: true,
       severity: 'info',
       title: `Routing: ${recOpus} opus, ${recSonnet} sonnet, ${recHaiku} haiku recommendations`,
       detail: `Out of ${routingStats.total} prompts classified. This reflects what Token Coach thinks should run where — actual delegation may differ.`,
@@ -265,18 +268,29 @@ function generateInsights(data) {
     const lastDate = new Date(stats.lastComputedDate);
     const daysSinceUpdate = Math.floor((Date.now() - lastDate.getTime()) / 86400000);
     if (daysSinceUpdate > 7) {
+      // Demote stale stats-cache insights so live data dominates
+      for (const insight of insights) {
+        if (!insight._live) {
+          insight.title = `[Historical] ${insight.title}`;
+          if (insight.severity === 'critical') insight.severity = 'info';
+        }
+      }
       insights.push({
         severity: 'info',
         title: `Stats cache is ${daysSinceUpdate} days old`,
-        detail: `Last computed: ${stats.lastComputedDate}. Token data may not reflect recent usage. The cache updates when Claude Code's internal stats computation runs.`,
-        action: 'Recent sessions may not be reflected in cost estimates. Daily logs and task log are always current.',
+        detail: `Last computed: ${stats.lastComputedDate}. Insights marked [Historical] are from stale cached data. Live routing insights from hooks are always current.`,
+        action: 'Focus on live routing data for current accuracy.',
       });
     }
   }
 
-  // Sort: critical first, then warning, info, success
+  // Sort: live insights first, then by severity
   const order = { critical: 0, warning: 1, info: 2, success: 3 };
-  insights.sort((a, b) => order[a.severity] - order[b.severity]);
+  insights.sort((a, b) => {
+    if (a._live && !b._live) return -1;
+    if (!a._live && b._live) return 1;
+    return order[a.severity] - order[b.severity];
+  });
 
   return insights;
 }
