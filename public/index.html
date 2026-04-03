@@ -372,6 +372,7 @@
   .d4 { animation-delay: 320ms; }
 
   .loading { text-align: center; padding: 100px 40px; color: var(--tertiary); font-size: 15px; }
+  #app { transition: opacity 180ms var(--ease); }
   .footer {
     text-align: center; padding: 24px; font-size: 12px; color: var(--quaternary);
     margin-top: 8px;
@@ -398,15 +399,28 @@ function toggleTheme() { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); ren
 setTheme(getTheme());
 
 async function load() {
+  const app = document.getElementById('app');
+  const isFirstLoad = !DATA;
   try {
     const res = await fetch('/api/dashboard');
     DATA = await res.json();
     const scrollY = window.scrollY;
-    render();
-    // Restore scroll position after DOM update (next frame)
-    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: 'instant' }));
+    if (isFirstLoad) {
+      render();
+    } else {
+      // Crossfade: fade out, swap content, fade back in — no visible flash
+      app.style.opacity = '0';
+      // Wait for fade-out to complete before swapping content
+      await new Promise(r => setTimeout(r, 180));
+      render();
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        app.style.opacity = '1';
+      });
+    }
   } catch (e) {
-    document.getElementById('app').innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+    app.style.opacity = '1';
+    app.innerHTML = `<div class="loading">Error: ${e.message}</div>`;
   }
 }
 
