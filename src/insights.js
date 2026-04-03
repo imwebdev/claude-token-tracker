@@ -1,5 +1,6 @@
 const { getModelTier, estimateSessionCost, calculateTotalCosts, calculateOptimalCost } = require('./calculator');
 const { detectWaste } = require('./waste');
+const events = require('./events');
 
 /**
  * Generate actionable insights from Claude Code usage data.
@@ -9,6 +10,45 @@ function generateInsights(data) {
   const insights = [];
   const { stats, history, sessions, dailyLogs, taskLog, projects, mcpServers } = data;
   const runWaste = detectWaste(data.runs || []);
+
+  // ─── Live Routing Insights (from hooks — always fresh) ────
+  const routingStats = events.getRoutingStats();
+
+  if (routingStats.total > 0) {
+    const recHaiku = routingStats.byRecommended.haiku || 0;
+    const recSonnet = routingStats.byRecommended.sonnet || 0;
+    const recOpus = routingStats.byRecommended.opus || 0;
+    const delegationPct = routingStats.delegationRate;
+
+    // Delegation rate insight
+    if (routingStats.delegated > 0) {
+      const optPct = routingStats.optimal > 0
+        ? Math.round(routingStats.optimal / routingStats.delegated * 100) : 0;
+      insights.push({
+        severity: optPct >= 80 ? 'success' : optPct >= 50 ? 'info' : 'warning',
+        title: `${routingStats.delegated} subagent dispatches (${optPct}% optimal)`,
+        detail: `Dispatches by model: Haiku ${routingStats.dispatches.haiku}, Sonnet ${routingStats.dispatches.sonnet}, Opus ${routingStats.dispatches.opus}. ${routingStats.suboptimal} used a more expensive model than recommended.`,
+        action: routingStats.suboptimal > 0
+          ? 'Review suboptimal dispatches — could cheaper models handle those tasks?'
+          : 'All dispatches matched recommendations. Keep it up.',
+      });
+    } else if (recHaiku + recSonnet > 0) {
+      insights.push({
+        severity: 'warning',
+        title: `0 delegations despite ${recHaiku + recSonnet} sub-opus recommendations`,
+        detail: `Token Coach recommended Haiku ${recHaiku} times and Sonnet ${recSonnet} times, but no subagent dispatches were recorded. All work is running on the primary model.`,
+        action: 'Use Agent(model: "haiku") for search/read tasks and Agent(model: "sonnet") for edits/reviews to reduce costs.',
+      });
+    }
+
+    // Recommendation distribution
+    insights.push({
+      severity: 'info',
+      title: `Routing: ${recOpus} opus, ${recSonnet} sonnet, ${recHaiku} haiku recommendations`,
+      detail: `Out of ${routingStats.total} prompts classified. This reflects what Token Coach thinks should run where — actual delegation may differ.`,
+      action: 'Compare with actual dispatch counts to measure routing compliance.',
+    });
+  }
 
   if (!stats) {
     insights.push({

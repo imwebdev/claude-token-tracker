@@ -4,6 +4,7 @@ const path = require('path');
 const parser = require('./parser');
 const calculator = require('./calculator');
 const { generateInsights } = require('./insights');
+const events = require('./events');
 
 const PORT = process.env.PORT || 6099;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -14,6 +15,64 @@ const MIME = {
   '.js': 'application/javascript',
   '.json': 'application/json',
 };
+
+/**
+ * Extend cached stats with live data from history.jsonl for dates after lastComputedDate.
+ * The CLI's stats-cache.json can go stale — this fills the gap so charts stay current.
+ */
+function extendStatsWithHistory(stats, history, dailyLogs) {
+  const cutoff = stats?.lastComputedDate || '1970-01-01';
+  const extended = {
+    dailyActivity: [...(stats?.dailyActivity || [])],
+    hourCounts: { ...(stats?.hourCounts || {}) },
+    totalMessages: stats?.totalMessages || 0,
+    totalSessions: stats?.totalSessions || 0,
+  };
+
+  // Bucket history entries after the cache cutoff by date and hour
+  const byDate = {};
+  const sessionDates = new Set();
+  let newMessages = 0;
+
+  for (const h of history) {
+    if (!h.timestamp) continue;
+    const d = new Date(h.timestamp);
+    const dateStr = d.toISOString().slice(0, 10);
+    if (dateStr <= cutoff) continue;
+
+    newMessages++;
+    const hour = String(d.getHours());
+    extended.hourCounts[hour] = (extended.hourCounts[hour] || 0) + 1;
+
+    if (!byDate[dateStr]) byDate[dateStr] = { messages: 0, sessions: new Set() };
+    byDate[dateStr].messages++;
+    if (h.project) byDate[dateStr].sessions.add(h.project + '|' + dateStr);
+  }
+
+  // Also pull message counts from daily usage logs for dates after cutoff
+  for (const [date, count] of Object.entries(dailyLogs.interactions || {})) {
+    if (date <= cutoff) continue;
+    if (!byDate[date]) byDate[date] = { messages: 0, sessions: new Set() };
+    // Usage logs count interactions — use as floor if history.jsonl has fewer
+    if (count > byDate[date].messages) byDate[date].messages = count;
+  }
+
+  // Append new daily activity entries
+  const sortedDates = Object.keys(byDate).sort();
+  for (const date of sortedDates) {
+    extended.dailyActivity.push({
+      date,
+      messageCount: byDate[date].messages,
+      sessionCount: byDate[date].sessions.size || 1,
+      toolCallCount: 0, // can't derive from history.jsonl
+    });
+  }
+
+  extended.totalMessages += newMessages;
+  extended.totalSessions += sortedDates.length; // rough estimate
+
+  return extended;
+}
 
 function buildDashboardData() {
   const stats = parser.readStatsCache();
@@ -31,6 +90,9 @@ function buildDashboardData() {
     description: run.task,
   })) : parser.readTaskLog();
   const projects = parser.getProjects(history);
+
+  // Extend cached stats with live history data to fill the gap
+  const liveStats = extendStatsWithHistory(stats, history, dailyLogs);
 
   // Routing analytics (the core feature)
   const routing = parser.analyzeRouting(taskLog);
@@ -52,15 +114,15 @@ function buildDashboardData() {
     stats, history, sessions, dailyLogs, taskLog, projects, mcpServers, runs,
   });
 
-  // Build daily chart data
-  const dailyChart = (stats?.dailyActivity || []).map(d => ({
+  // Build daily chart data from the EXTENDED stats (includes post-cache data)
+  const dailyChart = (liveStats.dailyActivity || []).map(d => ({
     date: d.date,
     messages: d.messageCount,
     sessions: d.sessionCount,
     toolCalls: d.toolCallCount,
   }));
 
-  // Model token chart
+  // Model token chart (still from cache — no token data in history.jsonl)
   const modelTokenChart = (stats?.dailyModelTokens || []).map(d => ({
     date: d.date,
     ...d.tokensByModel,
@@ -79,14 +141,36 @@ function buildDashboardData() {
     };
   }
 
+  // Live routing events from hooks
+  const routingStats = events.getRoutingStats();
+  const recentEvents = events.readEvents({ limit: 200 });
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  // Compute live-only stats from routing events (hooks data only, no stale cache)
+  const liveRoutingEvents = recentEvents.filter(e => e.type === 'routing_decision' || e.type === 'subagent_dispatch');
+  const liveHourCounts = {};
+  for (const ev of recentEvents) {
+    if (!ev.ts) continue;
+    // Parse local time from our local ISO strings
+    const hour = String(new Date(ev.ts).getHours());
+    liveHourCounts[hour] = (liveHourCounts[hour] || 0) + 1;
+  }
+
   return {
     stats: {
-      totalSessions: stats?.totalSessions || 0,
-      totalMessages: stats?.totalMessages || 0,
+      totalSessions: liveStats.totalSessions,
+      totalMessages: liveStats.totalMessages,
       lastComputedDate: stats?.lastComputedDate || 'N/A',
-      firstSessionDate: stats?.firstSessionDate || 'N/A',
-      hourCounts: stats?.hourCounts || {},
+      lastLiveDate: todayStr,
+      cacheStale: stats?.lastComputedDate ? stats.lastComputedDate < todayStr : true,
+      firstSessionDate: todayStr, // Fresh start — show when hooks started
+      hourCounts: liveHourCounts,
       longestSession: stats?.longestSession || null,
+      // Separate live vs archived stats
+      liveEvents: recentEvents.length,
+      liveDecisions: liveRoutingEvents.length,
     },
     costs,
     optimal,
@@ -109,11 +193,29 @@ function buildDashboardData() {
       interactions: dailyLogs.interactions,
       errors: dailyLogs.errors,
     },
+    // Live routing data from hooks
+    routingEvents: {
+      stats: routingStats,
+      recent: recentEvents.slice(-100).reverse(),
+    },
   };
 }
 
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+
+  if (req.url === '/api/routing') {
+    try {
+      const stats = events.getRoutingStats();
+      const recent = events.readEvents({ limit: 500 });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ stats, events: recent.reverse() }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
 
   if (req.url === '/api/dashboard') {
     try {

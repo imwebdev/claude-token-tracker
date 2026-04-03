@@ -44,6 +44,15 @@
 
     --toggle-bg: var(--card);
     --toggle-icon: '☀️';
+
+    /* Model tier colors */
+    --opus: #8234a8;
+    --sonnet: #0060c2;
+    --haiku: #195464;
+    --codex: #995700;
+    --card-alt: rgba(0, 0, 0, 0.03);
+    --success: #117a22;
+    --secondary: #48484e;
   }
 
   /* ─── Dark Mode ───────────────────────────────── */
@@ -80,6 +89,15 @@
 
     --toggle-bg: var(--card);
     --toggle-icon: '🌙';
+
+    /* Model tier colors */
+    --opus: #d4b5ff;
+    --sonnet: #6cb4ff;
+    --haiku: #7edce2;
+    --codex: #fdba74;
+    --card-alt: rgba(255, 255, 255, 0.04);
+    --success: #6ee7b7;
+    --secondary: #aeaeb2;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -383,7 +401,10 @@ async function load() {
   try {
     const res = await fetch('/api/dashboard');
     DATA = await res.json();
+    const scrollY = window.scrollY;
     render();
+    // Restore scroll position after DOM update (next frame)
+    requestAnimationFrame(() => window.scrollTo({ top: scrollY, behavior: 'instant' }));
   } catch (e) {
     document.getElementById('app').innerHTML = `<div class="loading">Error: ${e.message}</div>`;
   }
@@ -427,7 +448,7 @@ function render() {
       </div>
       <div class="header-right">
         <div class="live-dot"></div>
-        <span class="refresh-label">Auto-refresh 30s</span>
+        <span class="refresh-label">Auto-refresh 60s</span>
         <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">${isDark ? '☀️' : '🌙'}</button>
       </div>
     </div>
@@ -498,96 +519,148 @@ function render() {
             `).join('')}
           </div>
         </div>
-        <div class="card">
-          <div class="card-title">Tips</div>
-          <div class="tips-grid">
-            <div class="tip"><div class="tip-title">Short sessions</div><div class="tip-body">Keep under 25 messages. Use /compact or start fresh.</div></div>
-            <div class="tip"><div class="tip-title">Route down</div><div class="tip-body">Searches &rarr; Haiku. Small edits &rarr; Sonnet. Multi-file &rarr; Opus.</div></div>
-            <div class="tip"><div class="tip-title">Parallel agents</div><div class="tip-body">Independent subtasks = parallel subagents, not sequential opus.</div></div>
-            <div class="tip"><div class="tip-title">Be specific</div><div class="tip-body">File paths, line numbers, exact changes. Vague = more tokens.</div></div>
-          </div>
-        </div>
       </div>
     </div>
 
-    <!-- Analytics Row -->
-    <div class="grid-3 anim d3">
+    <!-- Smart Routing Decisions (from hooks) — THE PRIMARY VIEW -->
+    <div class="anim d3">
       <div class="card">
-        <div class="card-title">Token Distribution</div>
-        ${renderModelBars(D.modelSummary)}
-        <div style="margin-top:20px">
-          <div class="card-title" style="margin-bottom:10px">Cache Efficiency</div>
-          ${renderCacheBar(D.modelSummary)}
+        <div class="card-title">
+          <span>Smart Routing Decisions</span>
+          <span class="count">${D.routingEvents?.stats?.total || 0} decisions</span>
         </div>
-        <div style="margin-top:20px">
-          <div class="card-title" style="margin-bottom:10px">Task Routing</div>
-          ${renderRoutingBars(r)}
-        </div>
+        ${renderRoutingDecisions(D.routingEvents)}
       </div>
+    </div>
 
+    <!-- Live Analytics -->
+    <div class="grid-2 anim d4">
       <div class="card">
-        <div class="card-title">Cost Estimate</div>
-        ${c ? Object.entries(D.modelSummary).map(([tier, m]) => `
-          <div class="cost-row">
-            <div>
-              <div class="cost-model" style="color:var(--${tier})">${tier}</div>
-              <div class="cost-sub">${(m.inputTokens/1e6).toFixed(1)}M in &middot; ${(m.outputTokens/1e6).toFixed(1)}M out</div>
-            </div>
-            <div class="cost-amount">${money(m.cost.total)}</div>
-          </div>
-        `).join('') : '<div style="color:var(--tertiary)">No token data</div>'}
-        ${c ? `<div class="cost-total"><span>Total</span><span>${money(c.grandTotal)}</span></div>` : ''}
-        ${o && o.savings > 1 ? `<div style="margin-top:10px;text-align:center"><span class="savings-badge">Save ${money(o.savings)} (${o.savingsPercent.toFixed(0)}%) with optimal routing</span></div>` : ''}
-      </div>
-
-      <div class="card">
-        <div class="card-title">Activity by Hour</div>
+        <div class="card-title">Activity by Hour <span style="font-size:11px;color:var(--tertiary);font-weight:400">(live hooks)</span></div>
         ${renderHourGrid(s.hourCounts)}
-        <div style="margin-top:20px">
-          <div class="card-title" style="margin-bottom:10px">Daily Messages (30d)</div>
-          <div class="spark">${renderSpark(D.dailyChart)}</div>
-        </div>
         <div style="margin-top:20px">
           <div class="card-title" style="margin-bottom:10px">Overview</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="font-size:12px;color:var(--tertiary)">Sessions</div>
-            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${$(s.totalSessions)}</div>
-            <div style="font-size:12px;color:var(--tertiary)">Messages</div>
-            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${$(s.totalMessages)}</div>
-            <div style="font-size:12px;color:var(--tertiary)">Avg / Session</div>
-            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${s.totalSessions ? Math.round(s.totalMessages / s.totalSessions) : 0}</div>
-            <div style="font-size:12px;color:var(--tertiary)">Since</div>
-            <div style="font-size:12px;font-weight:600;text-align:right">${s.firstSessionDate ? s.firstSessionDate.slice(0,10) : 'N/A'}</div>
+            <div style="font-size:12px;color:var(--tertiary)">Hook Events</div>
+            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${$(s.liveEvents || 0)}</div>
+            <div style="font-size:12px;color:var(--tertiary)">Routing Decisions</div>
+            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${$(s.liveDecisions || 0)}</div>
+            <div style="font-size:12px;color:var(--tertiary)">Today</div>
+            <div style="font-size:12px;font-weight:600;text-align:right">${s.lastLiveDate || 'N/A'}</div>
+            <div style="font-size:12px;color:var(--tertiary)">Tracking Since</div>
+            <div style="font-size:12px;font-weight:600;text-align:right">${s.firstSessionDate || 'N/A'}</div>
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Projects -->
-    <div class="grid-2 anim d4">
       <div class="card">
-        <div class="card-title"><span>Projects</span><span class="count">${D.projects.length}</span></div>
-        ${D.projects.slice(0, 8).map(p => `
-          <div class="project-row">
-            <div class="project-name">${esc(p.name)}</div>
-            <div class="project-msgs">${$(p.messages)} msgs</div>
-          </div>
-        `).join('')}
-      </div>
-      <div class="card">
-        <div class="card-title">Projects by Model Routing</div>
-        ${renderProjectRouting(r)}
+        <div class="card-title">Tips</div>
+        <div class="tips-grid">
+          <div class="tip"><div class="tip-title">Short sessions</div><div class="tip-body">Keep under 25 messages. Use /compact or start fresh.</div></div>
+          <div class="tip"><div class="tip-title">Route down</div><div class="tip-body">Searches &rarr; Haiku. Small edits &rarr; Sonnet. Multi-file &rarr; Opus.</div></div>
+          <div class="tip"><div class="tip-title">Parallel agents</div><div class="tip-body">Independent subtasks = parallel subagents, not sequential opus.</div></div>
+          <div class="tip"><div class="tip-title">Be specific</div><div class="tip-body">File paths, line numbers, exact changes. Vague = more tokens.</div></div>
+        </div>
       </div>
     </div>
 
     <div class="footer">
-      Token telemetry from ~/.claude/stats-cache.json (${s.lastComputedDate}) &middot;
-      Routing records: ${r.totalTasks} entries &middot; Refreshes every 30s
+      Live routing via hooks &middot; ${s.liveEvents || 0} events &middot; ${s.liveDecisions || 0} decisions &middot;
+      Today: ${s.lastLiveDate || 'N/A'} &middot; Refreshes every 60s
     </div>
   `;
 }
 
 /* ─── Renderers ─────────────────────────────────── */
+
+function renderRoutingDecisions(re) {
+  if (!re || !re.recent || !re.recent.length) {
+    return '<div style="padding:32px;text-align:center;color:var(--tertiary);font-size:14px">No routing events yet. Hooks will capture decisions as you use Claude Code.</div>';
+  }
+
+  const stats = re.stats || {};
+  const decisions = re.recent.filter(e => e.type === 'routing_decision' || e.type === 'subagent_dispatch');
+
+  // Stats strip
+  const total = stats.total || 0;
+  const rec = stats.byRecommended || {};
+  const overridden = stats.overridden || 0;
+
+  let html = `
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px">
+      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
+        <div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums">${total}</div>
+        <div style="font-size:11px;color:var(--tertiary)">Decisions</div>
+      </div>
+      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:var(--haiku);font-variant-numeric:tabular-nums">${rec.haiku || 0}</div>
+        <div style="font-size:11px;color:var(--tertiary)">→ Haiku</div>
+      </div>
+      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:var(--sonnet);font-variant-numeric:tabular-nums">${rec.sonnet || 0}</div>
+        <div style="font-size:11px;color:var(--tertiary)">→ Sonnet</div>
+      </div>
+      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:var(--opus);font-variant-numeric:tabular-nums">${rec.opus || 0}</div>
+        <div style="font-size:11px;color:var(--tertiary)">→ Opus</div>
+      </div>
+      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:${overridden > 0 ? '#f59e0b' : 'var(--success)'};font-variant-numeric:tabular-nums">${overridden}</div>
+        <div style="font-size:11px;color:var(--tertiary)">Overrides</div>
+      </div>
+    </div>
+  `;
+
+  // Decision list
+  html += '<div style="max-height:400px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--quaternary) transparent">';
+
+  for (const ev of decisions.slice(0, 30)) {
+    const time = ev.ts ? new Date(ev.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const date = ev.ts ? ev.ts.slice(0, 10) : '';
+
+    if (ev.type === 'routing_decision') {
+      const cls = ev.classification || {};
+      const recModel = ev.recommended_model || '?';
+      const modelColor = `var(--${recModel})`;
+      html += `
+        <div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="model-badge" style="background:${modelColor};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase">${recModel}</span>
+              <span style="color:var(--tertiary);font-size:11px">${cls.family || '?'} · ${cls.complexity || '?'}</span>
+            </div>
+            <span style="color:var(--tertiary);font-size:11px">${date} ${time}</span>
+          </div>
+          <div style="color:var(--secondary);font-size:12px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(ev.prompt_preview || '')}</div>
+          <div style="color:var(--tertiary);font-size:11px;font-style:italic">${esc(ev.recommended_reason || '')}</div>
+        </div>
+      `;
+    } else if (ev.type === 'subagent_dispatch') {
+      const used = ev.model_used || '?';
+      const rec = ev.recommended_model || '?';
+      const optimal = ev.is_optimal;
+      const icon = optimal ? '✓' : '⚠';
+      const color = optimal ? 'var(--success)' : '#f59e0b';
+      html += `
+        <div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="color:${color};font-weight:700">${icon}</span>
+              <span style="font-size:11px;font-weight:600">DISPATCH</span>
+              <span class="model-badge" style="background:var(--${used});color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase">${used}</span>
+              ${!optimal ? `<span style="font-size:11px;color:#f59e0b">should be ${rec}</span>` : ''}
+            </div>
+            <span style="color:var(--tertiary);font-size:11px">${date} ${time}</span>
+          </div>
+          <div style="color:var(--secondary);font-size:12px;margin-bottom:4px">${esc(ev.description || ev.agent_type || '')}</div>
+          <div style="color:var(--tertiary);font-size:11px;font-style:italic">${esc(ev.justification || '')}</div>
+        </div>
+      `;
+    }
+  }
+
+  html += '</div>';
+  return html;
+}
 
 function renderTimeline(effectiveTab) {
   if (!DATA) return '';
@@ -734,7 +807,7 @@ function renderSpark(daily) {
 }
 
 load();
-setInterval(load, 30000);
+setInterval(load, 60000);
 </script>
 </body>
 </html>
