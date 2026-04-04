@@ -3,6 +3,8 @@
  * Analyzes task descriptions and recommends the optimal Claude model tier.
  */
 
+const { applyCustomRules } = require('./rules');
+
 const TASK_FAMILIES = {
   SEARCH_READ: 'search_read',
   CODE_EDIT: 'code_edit',
@@ -53,6 +55,25 @@ function classifyTask(task = '') {
   let family = TASK_FAMILIES.UNKNOWN;
   let complexity = 'medium';
   let confidence = 0.4;
+
+  // Check custom rules FIRST — they take precedence over keyword classification
+  try {
+    const customMatch = applyCustomRules(task);
+    if (customMatch) {
+      const resolvedFamily = Object.values(TASK_FAMILIES).includes(customMatch.family)
+        ? customMatch.family
+        : TASK_FAMILIES.UNKNOWN;
+      return {
+        family: resolvedFamily,
+        complexity,
+        confidence: 1.0,
+        reasons: [customMatch.reason],
+        customModel: customMatch.model || undefined,
+      };
+    }
+  } catch {
+    // Rules module unavailable — fall through to default classification
+  }
 
   // Check for complexity modifiers first
   const isComplex = matchesAny(text, PATTERNS.complex);
@@ -214,7 +235,7 @@ const OPUS_FLOOR = new Set([TASK_FAMILIES.ARCHITECTURE]);
  * @param {object} opts — { preference?: number (0-100) }
  */
 function recommendModel(classification, opts = {}) {
-  const { family, complexity } = classification || {};
+  const { family, complexity, customModel } = classification || {};
   let preference = opts.preference;
 
   // Load from config if not passed explicitly
@@ -227,9 +248,58 @@ function recommendModel(classification, opts = {}) {
     }
   }
 
-  const base = getBaseRecommendation(family, complexity);
+  // If a custom rule supplied an explicit model override, honour it directly
+  if (customModel && MODEL_ORDER.includes(customModel)) {
+    return {
+      model: customModel,
+      preference,
+      fallbackChain: customModel === 'haiku' ? ['haiku', 'sonnet', 'opus']
+        : customModel === 'sonnet' ? ['sonnet', 'opus']
+        : ['opus'],
+      reasons: classification.reasons || [`[custom] model override → ${customModel}`],
+      costMultiplier: customModel === 'haiku' ? 1 : customModel === 'sonnet' ? 3 : 15,
+    };
+  }
+
+  // ── Smart model selection: use user-defined capabilities if models.json exists ──
+  let base;
+  try {
+    const { selectByCapability } = require('./models');
+    const smart = selectByCapability(family, complexity);
+    if (smart) {
+      base = { model: smart.model, reason: smart.reason };
+    }
+  } catch {}
+  if (!base) base = getBaseRecommendation(family, complexity);
+
   let model = base.model;
   const reasons = [base.reason];
+
+  // ── A/B experiment override: if an experiment is running for this family, use its assigned model ──
+  try {
+    const { getActiveExperiment, assignModel } = require('./experiments');
+    const exp = getActiveExperiment(family);
+    if (exp) {
+      const experimentModel = assignModel(exp);
+      if (experimentModel) {
+        model = experimentModel;
+        reasons.push(`[experiment] ${exp.id} (${exp.family}) — assigned ${experimentModel} (${exp.count + 1}/${exp.target})`);
+        // Skip preference and learning adjustments when experiment is active
+        return {
+          model,
+          preference,
+          fallbackChain: model === 'haiku' ? ['haiku', 'sonnet', 'opus']
+            : model === 'sonnet' ? ['sonnet', 'opus']
+            : ['opus'],
+          reasons,
+          costMultiplier: model === 'haiku' ? 1 : model === 'sonnet' ? 3 : 15,
+          experiment: { id: exp.id, family: exp.family },
+        };
+      }
+    }
+  } catch {
+    // Experiments module not available — skip
+  }
 
   // Apply preference adjustment
   if (preference <= 25 && !OPUS_FLOOR.has(family)) {

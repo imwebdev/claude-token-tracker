@@ -28,12 +28,22 @@ if (command === 'serve' || command === 'dashboard') {
   handleConfig(args.slice(1));
 } else if (command === 'learn' || command === 'learning') {
   printLearning();
+} else if (command === 'experiment' || command === 'exp') {
+  handleExperiment(args.slice(1));
 } else if (command === 'update') {
   selfUpdate();
+} else if (command === 'repl') {
+  require(path.join(__dirname, '..', 'src', 'repl-command')).startRepl();
 } else if (command === 'insights') {
   printInsights();
 } else if (command === 'costs') {
   printCosts();
+} else if (command === 'report') {
+  require(path.join(__dirname, '..', 'src', 'report-command')).printReport(args.slice(1));
+} else if (command === 'rules') {
+  printRules();
+} else if (command === 'models') {
+  handleModels(args.slice(1));
 } else {
   printSummary();
 }
@@ -245,4 +255,185 @@ function printLearning() {
     if (detail) console.log(`    ${detail}`);
   }
   console.log('');
+}
+
+function printRules() {
+  const { listRules, createSampleRules, getRulesPath } = require(path.join(__dirname, '..', 'src', 'rules'));
+  const rulesPath = getRulesPath();
+  const rules = listRules();
+
+  console.log('\n  Claude Token Tracker — Custom Classification Rules\n');
+  console.log(`  Rules file: ${rulesPath}\n`);
+
+  if (!rules.length) {
+    console.log('  No custom rules found.');
+    console.log('  Creating a sample rules.json...\n');
+    const fp = createSampleRules();
+    const fresh = listRules();
+    console.log(`  Created: ${fp}\n`);
+    if (fresh.length) {
+      printRuleTable(fresh);
+    }
+    console.log('  Edit the file to add your own rules. Format:');
+    console.log('    match   — regex pattern (case-insensitive)');
+    console.log('    family  — task family (search_read, code_edit, review, plan, architecture, debug, command)');
+    console.log('    model   — haiku | sonnet | opus');
+    console.log('    priority — higher number wins when multiple rules match\n');
+    return;
+  }
+
+  printRuleTable(rules);
+  console.log(`  Total: ${rules.length} rule(s)`);
+  console.log('\n  Edit rules at: ' + rulesPath + '\n');
+}
+
+function printRuleTable(rules) {
+  const header = `  ${'Priority'.padEnd(10)} ${'Model'.padEnd(8)} ${'Family'.padEnd(16)} Match`;
+  console.log(header);
+  console.log('  ' + '-'.repeat(60));
+  for (const r of rules) {
+    const pri = String(r.priority || 0).padEnd(10);
+    const model = (r.model || 'inherit').padEnd(8);
+    const family = (r.family || '').padEnd(16);
+    console.log(`  ${pri} ${model} ${family} ${r.match}`);
+  }
+  console.log('');
+}
+
+function handleModels(args) {
+  const { listModels, writeSampleConfig, modelsPath } = require(path.join(__dirname, '..', 'src', 'models'));
+
+  if (args[0] === 'init' || args[0] === 'create') {
+    const created = writeSampleConfig();
+    if (created) {
+      console.log(`\n  ✓ Created sample models config at ${modelsPath()}`);
+      console.log('  Edit it to define custom model capabilities.\n');
+    } else {
+      console.log(`\n  Models config already exists at ${modelsPath()}\n`);
+    }
+    return;
+  }
+
+  const { models, hasUserConfig, configPath } = listModels();
+  const families = ['search_read', 'question', 'code_edit', 'command', 'review', 'plan', 'debug', 'multi_file', 'architecture'];
+
+  console.log('\n  Token Coach — Model Capabilities\n');
+  console.log(`  Config: ${hasUserConfig ? configPath : 'using built-in defaults'}`);
+  if (!hasUserConfig) {
+    console.log('  Run `claude-tokens models init` to create a customizable models.json\n');
+  } else {
+    console.log('  Smart selection active — router picks cheapest model meeting capability threshold\n');
+  }
+
+  const nameW = 12;
+  const costW = 6;
+  const capW = 5;
+  let header = '  ' + 'Model'.padEnd(nameW) + 'Cost'.padStart(costW);
+  for (const f of families) header += f.slice(0, 4).padStart(capW);
+  console.log(header);
+  console.log('  ' + '-'.repeat(header.length - 2));
+
+  for (const [name, profile] of Object.entries(models)) {
+    let row = '  ' + name.padEnd(nameW) + (profile.cost + 'x').padStart(costW);
+    for (const f of families) {
+      const score = profile.capabilities[f] ?? 0;
+      row += (Math.round(score * 100) + '').padStart(capW);
+    }
+    console.log(row);
+  }
+  console.log('');
+}
+
+function handleExperiment(args) {
+  const experiments = require(path.join(__dirname, '..', 'src', 'experiments'));
+  const sub = args[0];
+
+  if (sub === 'create') {
+    let family, models, count = 50, split = 50;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--family' && args[i + 1]) family = args[++i];
+      else if (args[i] === '--models' && args[i + 1]) models = args[++i].split(',').map(m => m.trim());
+      else if (args[i] === '--count' && args[i + 1]) count = parseInt(args[++i], 10);
+      else if (args[i] === '--split' && args[i + 1]) split = parseInt(args[++i], 10);
+    }
+
+    if (!family) {
+      console.error('\n  Error: --family is required');
+      console.error('  Example: claude-tokens exp create --family code_edit --models haiku,sonnet --count 30\n');
+      process.exit(1);
+    }
+    if (!models || models.length < 2) {
+      console.error('\n  Error: --models must list at least 2 models (e.g. haiku,sonnet)\n');
+      process.exit(1);
+    }
+
+    const exp = experiments.createExperiment(family, models, count, split);
+    console.log('\n  Experiment created\n');
+    console.log(`  ID:       ${exp.id}`);
+    console.log(`  Family:   ${exp.family}`);
+    console.log(`  Models:   ${exp.models.join(' vs ')}`);
+    console.log(`  Split:    ${exp.split}% / ${100 - exp.split}%`);
+    console.log(`  Target:   ${exp.target} assignments`);
+    console.log(`  Status:   ${exp.status}\n`);
+    return;
+  }
+
+  if (sub === 'stop') {
+    let family;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--family' && args[i + 1]) family = args[++i];
+    }
+    if (!family) {
+      const report = experiments.getExperimentReport();
+      if (report.active.length === 0) { console.log('\n  No active experiments to stop.\n'); return; }
+      family = report.active[0].family;
+    }
+    const stopped = experiments.stopExperiment(family);
+    if (!stopped) { console.log(`\n  No active experiment for family: ${family}\n`); return; }
+    console.log(`\n  Experiment ${stopped.id} stopped.`);
+    if (stopped.winner) console.log(`  Winner: ${stopped.winner} (by success rate)`);
+    console.log('');
+    return;
+  }
+
+  // Default: show report
+  const report = experiments.getExperimentReport();
+
+  console.log('\n  Claude Token Tracker — A/B Routing Experiments\n');
+
+  if (report.active.length === 0 && report.completed.length === 0) {
+    console.log('  No experiments yet.');
+    console.log('  Create one: claude-tokens exp create --family code_edit --models haiku,sonnet --count 30\n');
+    return;
+  }
+
+  if (report.active.length > 0) {
+    console.log('  Active\n');
+    for (const exp of report.active) {
+      console.log(`  ${exp.id}  ${exp.family}  ${exp.progress}`);
+      console.log(`    Models: ${exp.models.join(' vs ')}  |  Split: ${exp.split}/${100 - exp.split}`);
+      for (const s of exp.modelStats) {
+        const pct = s.rate != null ? `${s.rate}% success` : 'no data';
+        console.log(`      ${s.model.padEnd(8)} ${s.total} assignments  ${pct}`);
+      }
+      console.log('');
+    }
+  }
+
+  if (report.completed.length > 0) {
+    console.log('  Completed / Stopped\n');
+    for (const exp of report.completed) {
+      const winnerLabel = exp.winner ? `  winner: ${exp.winner}` : '';
+      console.log(`  ${exp.id}  ${exp.family}  ${exp.status}  ${exp.progress}${winnerLabel}`);
+      for (const s of exp.modelStats) {
+        const pct = s.rate != null ? `${s.rate}% success` : 'no data';
+        console.log(`      ${s.model.padEnd(8)} ${s.total} assignments  ${pct}`);
+      }
+      console.log('');
+    }
+  }
+
+  console.log('  Commands:');
+  console.log('    claude-tokens exp create --family <family> --models <m1,m2> --count <n>');
+  console.log('    claude-tokens exp stop [--family <family>]\n');
 }
