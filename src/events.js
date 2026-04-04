@@ -117,10 +117,133 @@ function getRoutingStats(opts = {}) {
   return stats;
 }
 
+/**
+ * Estimate cost per prompt based on model tier.
+ * Rough estimates: avg ~2000 input tokens + ~800 output per prompt turn.
+ * Subagent dispatches add ~1500 input + ~600 output.
+ */
+const COST_PER_PROMPT = {
+  haiku:  { input: 2000, output: 800, priceIn: 1.00, priceOut: 5.00 },
+  sonnet: { input: 2000, output: 800, priceIn: 3.00, priceOut: 15.00 },
+  opus:   { input: 2000, output: 800, priceIn: 15.00, priceOut: 75.00 },
+};
+
+function estimatePromptCost(model) {
+  const tier = (model || 'opus').includes('opus') ? 'opus'
+    : (model || '').includes('sonnet') ? 'sonnet'
+    : (model || '').includes('haiku') ? 'haiku' : 'opus';
+  const c = COST_PER_PROMPT[tier];
+  const m = 1_000_000;
+  return (c.input / m * c.priceIn) + (c.output / m * c.priceOut);
+}
+
+/**
+ * Get per-session cost estimates from today's events.
+ * Returns { sessions: { [session_id]: { prompts, estimatedCost, models, lastActivity } } }
+ */
+function getSessionCosts() {
+  const todayStr = today();
+  const allEvents = readEvents({ since: todayStr });
+  const sessions = {};
+
+  for (const ev of allEvents) {
+    const sid = ev.session_id;
+    if (!sid) continue;
+
+    if (!sessions[sid]) {
+      sessions[sid] = { prompts: 0, estimatedCost: 0, models: {}, lastActivity: ev.ts, project: ev.project || 'unknown' };
+    }
+    const s = sessions[sid];
+    s.lastActivity = ev.ts;
+
+    if (ev.type === 'routing_decision') {
+      s.prompts++;
+      const model = ev.recommended_model || 'opus';
+      s.models[model] = (s.models[model] || 0) + 1;
+      s.estimatedCost += estimatePromptCost(model);
+    } else if (ev.type === 'subagent_dispatch') {
+      const model = ev.model_used || 'sonnet';
+      s.models[model] = (s.models[model] || 0) + 1;
+      s.estimatedCost += estimatePromptCost(model);
+    }
+  }
+
+  return { sessions };
+}
+
+/**
+ * Get cost for a specific session.
+ */
+function getSessionCost(sessionId) {
+  const { sessions } = getSessionCosts();
+  return sessions[sessionId] || { prompts: 0, estimatedCost: 0, models: {}, lastActivity: null };
+}
+
+/**
+ * Identify token-hungry MCP servers, skills, agents, and processes.
+ * Analyzes tool_call and subagent_dispatch events to find top consumers.
+ */
+function getTokenHogs() {
+  const allEvents = readEvents({});
+  const toolCalls = allEvents.filter(e => e.type === 'tool_call');
+  const dispatches = allEvents.filter(e => e.type === 'subagent_dispatch');
+
+  // MCP server call counts
+  const mcpServers = {};
+  const skills = {};
+  const agentTypes = {};
+  const allTools = {};
+
+  for (const ev of toolCalls) {
+    const tool = ev.tool || '';
+    allTools[tool] = (allTools[tool] || 0) + 1;
+
+    if (tool.startsWith('mcp__')) {
+      const parts = tool.split('__');
+      const server = parts[1] || 'unknown';
+      if (!mcpServers[server]) mcpServers[server] = { calls: 0, tools: {} };
+      mcpServers[server].calls++;
+      const toolName = parts.slice(2).join('__') || tool;
+      mcpServers[server].tools[toolName] = (mcpServers[server].tools[toolName] || 0) + 1;
+    }
+
+    if (tool === 'Skill') {
+      const skillName = (ev.summary || '').replace('Skill:', '').trim() || 'unknown';
+      skills[skillName] = (skills[skillName] || 0) + 1;
+    }
+  }
+
+  for (const ev of dispatches) {
+    const agentType = ev.agent_type || 'general-purpose';
+    if (!agentTypes[agentType]) agentTypes[agentType] = { dispatches: 0, models: {} };
+    agentTypes[agentType].dispatches++;
+    const model = ev.model_used || 'opus';
+    agentTypes[agentType].models[model] = (agentTypes[agentType].models[model] || 0) + 1;
+  }
+
+  // Sort by call count
+  const sortedMcp = Object.entries(mcpServers).sort((a, b) => b[1].calls - a[1].calls);
+  const sortedAgents = Object.entries(agentTypes).sort((a, b) => b[1].dispatches - a[1].dispatches);
+  const sortedTools = Object.entries(allTools).sort((a, b) => b[1] - a[1]);
+
+  return {
+    mcpServers: sortedMcp.map(([name, data]) => ({ name, ...data })),
+    skills: Object.entries(skills).sort((a, b) => b[1] - a[1]).map(([name, calls]) => ({ name, calls })),
+    agentTypes: sortedAgents.map(([name, data]) => ({ name, ...data })),
+    topTools: sortedTools.slice(0, 15).map(([name, calls]) => ({ name, calls })),
+    totalToolCalls: toolCalls.length,
+    totalDispatches: dispatches.length,
+  };
+}
+
 module.exports = {
   logEvent,
   readEvents,
   getRoutingStats,
+  getSessionCosts,
+  getSessionCost,
+  estimatePromptCost,
+  getTokenHogs,
   DATA_DIR,
   EVENTS_DIR,
 };

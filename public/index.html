@@ -3,832 +3,650 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Claude Token Coach</title>
+<title>Token Coach</title>
 <style>
-  /* ─── Apple-Pro Light — WCAG 2.1 AAA ──────────── */
   :root {
-    --bg: #fbfbfd;
-    --fg: #1d1d1f;
-    --card: #f5f5f7;
-    --card-hover: #efeff1;
-    --muted: #48484e;
-    --tertiary: #515158;
-    --quaternary: #86868b;
-    --border: rgba(0, 0, 0, 0.08);
-    --separator: rgba(0, 0, 0, 0.05);
+    --bg: #fafafa;
+    --fg: #171717;
+    --card: #ffffff;
+    --muted: #525252;          /* 7.81:1 on #fff — AAA */
+    --dim: #595959;            /* 7.00:1 on #fff — AAA */
+    --faint: #e5e5e5;
+    --border: #e5e5e5;
+    --separator: #f0f0f0;
+    --accent: #6d5000;         /* 7.51:1 on #fff — AAA */
+    --accent-dim: rgba(109, 80, 0, 0.08);
+    --accent-muted: rgba(109, 80, 0, 0.5);
+    --danger: #8b1a1a;         /* 9.29:1 on #fff — AAA */
+    --danger-dim: rgba(139, 26, 26, 0.06);
+    --shadow: 0 1px 2px rgba(0,0,0,0.04);
+    --radius: 8px;
+    --mono: "SF Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace;
 
-    /* AAA-compliant accents on #f5f5f7 backgrounds */
-    --blue: #0060c2;       /* 7.1:1 */
-    --green: #117a22;      /* 7.3:1 */
-    --orange: #995700;     /* 7.0:1 */
-    --red: #961f16;        /* 8.5:1 */
-    --purple: #8234a8;     /* 7.2:1 */
-    --teal: #195464;       /* 9.6:1 */
-    --amber: #7a5600;      /* 7.1:1 */
-
-    --blue-bg: rgba(0, 96, 194, 0.06);
-    --green-bg: rgba(17, 122, 34, 0.06);
-    --orange-bg: rgba(153, 87, 0, 0.06);
-    --red-bg: rgba(150, 31, 22, 0.06);
-    --purple-bg: rgba(130, 52, 168, 0.06);
-    --teal-bg: rgba(25, 84, 100, 0.06);
-    --amber-bg: rgba(122, 86, 0, 0.06);
-
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
-    --radius-sm: 12px;
-    --radius-md: 20px;
-    --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
-    --ease-smooth: cubic-bezier(0.45, 0, 0.15, 1);
-
-    --toggle-bg: var(--card);
-    --toggle-icon: '☀️';
-
-    /* Model tier colors */
-    --opus: #8234a8;
-    --sonnet: #0060c2;
-    --haiku: #195464;
-    --codex: #995700;
-    --card-alt: rgba(0, 0, 0, 0.03);
-    --success: #117a22;
-    --secondary: #48484e;
+    /* Model tier — single hue, differentiated by opacity */
+    --tier-high: var(--fg);
+    --tier-mid: var(--muted);
+    --tier-low: var(--dim);
   }
 
-  /* ─── Dark Mode ───────────────────────────────── */
   [data-theme="dark"] {
-    --bg: #1d1d1f;
-    --fg: #f5f5f7;
-    --card: #2c2c2e;
-    --card-hover: #333335;
-    --muted: #aeaeb2;
-    --tertiary: #8e8e93;
-    --quaternary: #636366;
-    --border: rgba(255, 255, 255, 0.08);
-    --separator: rgba(255, 255, 255, 0.05);
+    --bg: #0a0a0a;
+    --fg: #e5e5e5;
+    --card: #141414;
+    --muted: #a3a3a3;          /* 7.30:1 on #141414 — AAA */
+    --dim: #a0a0a0;            /* 7.04:1 on #141414 — AAA */
+    --faint: #262626;
+    --border: #262626;
+    --separator: #1a1a1a;
+    --accent: #d4a843;         /* 8.32:1 on #141414 — AAA */
+    --accent-dim: rgba(212, 168, 67, 0.08);
+    --accent-muted: rgba(212, 168, 67, 0.45);
+    --danger: #f09090;         /* 7.98:1 on #141414 — AAA */
+    --danger-dim: rgba(239, 68, 68, 0.08);
+    --shadow: 0 1px 2px rgba(0,0,0,0.3);
 
-    --blue: #6cb4ff;
-    --green: #6ee7b7;
-    --orange: #fdba74;
-    --red: #fca5a5;
-    --purple: #d4b5ff;
-    --teal: #7edce2;
-    --amber: #fde68a;
-
-    --blue-bg: rgba(108, 180, 255, 0.07);
-    --green-bg: rgba(110, 231, 183, 0.07);
-    --orange-bg: rgba(253, 186, 116, 0.07);
-    --red-bg: rgba(252, 165, 165, 0.07);
-    --purple-bg: rgba(212, 181, 255, 0.07);
-    --teal-bg: rgba(126, 220, 226, 0.07);
-    --amber-bg: rgba(253, 230, 138, 0.07);
-
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
-    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
-
-    --toggle-bg: var(--card);
-    --toggle-icon: '🌙';
-
-    /* Model tier colors */
-    --opus: #d4b5ff;
-    --sonnet: #6cb4ff;
-    --haiku: #7edce2;
-    --codex: #fdba74;
-    --card-alt: rgba(255, 255, 255, 0.04);
-    --success: #6ee7b7;
-    --secondary: #aeaeb2;
+    --tier-high: var(--fg);
+    --tier-mid: var(--muted);
+    --tier-low: var(--dim);
   }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { overflow-x: hidden; width: 100%; }
+  html { -webkit-font-smoothing: antialiased; }
   body {
-    font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     background: var(--bg); color: var(--fg);
-    line-height: 1.47; letter-spacing: -0.022em;
-    transition: background 300ms var(--ease), color 300ms var(--ease);
+    line-height: 1.5; letter-spacing: -0.011em;
+    transition: background 200ms, color 200ms;
   }
-  ::selection { background: rgba(0, 96, 194, 0.15); }
-  [data-theme="dark"] ::selection { background: rgba(108, 180, 255, 0.25); }
+  ::selection { background: rgba(109, 80, 0, 0.2); }
 
-  .page { max-width: 1080px; margin: 0 auto; padding: clamp(2rem, 4vw, 4rem) 24px 64px; }
+  /* ─── Accessibility ──────────────────────── */
+  /* Focus indicators — visible on all interactive elements */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  /* Remove default focus ring when using mouse */
+  :focus:not(:focus-visible) { outline: none; }
 
-  /* ─── Header ──────────────────────────────────── */
-  .page-header {
-    display: flex; justify-content: space-between; align-items: flex-start;
-    margin-bottom: clamp(1.5rem, 3vw, 2.5rem);
+  /* Skip-to-content link */
+  .skip-link {
+    position: absolute; top: -100px; left: 16px; z-index: 100;
+    background: var(--fg); color: var(--bg); padding: 8px 16px;
+    font-size: 13px; font-weight: 600; border-radius: 0 0 6px 6px;
+    text-decoration: none; transition: top 200ms;
   }
-  h1 {
-    font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, sans-serif;
-    font-size: clamp(2rem, 4vw, 3rem); font-weight: 700;
-    line-height: 1.08; letter-spacing: -0.03em;
-  }
-  .subtitle { font-size: 15px; color: var(--muted); margin-top: 6px; }
-  .header-right { display: flex; align-items: center; gap: 12px; padding-top: 10px; }
-  .live-dot {
-    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
-    animation: pulse 2s ease infinite;
-  }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-  .refresh-label { font-size: 12px; color: var(--quaternary); }
+  .skip-link:focus { top: 0; }
 
-  /* ─── Theme Toggle ────────────────────────────── */
-  .theme-toggle {
-    width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
-    background: var(--card); cursor: pointer; font-size: 16px;
-    display: flex; align-items: center; justify-content: center;
-    transition: all 200ms var(--ease);
-  }
-  .theme-toggle:hover { box-shadow: var(--shadow-md); transform: scale(1.05); }
-
-  /* ─── Section Labels ──────────────────────────── */
-  .section-label {
-    font-size: 12px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.06em; color: var(--tertiary); margin-bottom: 12px;
+  /* Screen-reader only text */
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
   }
 
-  /* ─── Stats Row ───────────────────────────────── */
-  .stats-row {
-    display: grid; grid-template-columns: repeat(6, 1fr);
-    gap: 12px; margin-bottom: clamp(1.5rem, 3vw, 2.5rem);
-  }
-  @media (max-width: 720px) { .stats-row { grid-template-columns: repeat(3, 1fr); } }
-  .stat {
-    background: var(--card); border-radius: var(--radius-md); padding: 20px;
-    transition: box-shadow 400ms var(--ease), transform 400ms var(--ease);
-  }
-  .stat:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-  .stat-label {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.06em; color: var(--tertiary); margin-bottom: 6px;
-  }
-  .stat-val {
-    font-family: "SF Pro Display", -apple-system, sans-serif;
-    font-size: clamp(1.4rem, 2.5vw, 1.8rem); font-weight: 700;
-    letter-spacing: -0.03em; line-height: 1;
-    font-variant-numeric: tabular-nums;
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 
-  /* ─── Cards ───────────────────────────────────── */
-  .card {
-    background: var(--card); border-radius: var(--radius-md); padding: 24px;
-    transition: box-shadow 400ms var(--ease);
-  }
-  .card:hover { box-shadow: var(--shadow-md); }
-  .card-title {
-    font-size: 12px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.06em; color: var(--tertiary); margin-bottom: 16px;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .card-title .count { font-variant-numeric: tabular-nums; color: var(--quaternary); }
+  .page { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; overflow-x: hidden; width: 100%; }
 
-  /* ─── Grid Layouts ────────────────────────────── */
-  .grid-main { display: grid; grid-template-columns: 1fr 380px; gap: 12px; margin-bottom: clamp(1.5rem, 3vw, 2.5rem); }
-  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: clamp(1.5rem, 3vw, 2.5rem); }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: clamp(1.5rem, 3vw, 2.5rem); }
-  @media (max-width: 860px) { .grid-main, .grid-3 { grid-template-columns: 1fr; } }
-  @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+  /* ─── Header ─────────────────────────────── */
+  .hdr {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 32px; border-bottom: 1px solid var(--border); padding-bottom: 16px;
+  }
+  .hdr h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+  .hdr-right { display: flex; align-items: center; gap: 12px; }
+  .hdr-live { font-size: 11px; color: var(--accent); font-weight: 500; }
+  .hdr-live::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 5px; vertical-align: 1px; }
+  .theme-btn {
+    font-size: 12px; color: var(--dim); background: none; border: 1px solid var(--border);
+    border-radius: 6px; padding: 4px 10px; cursor: pointer; font-family: inherit;
+    transition: color 200ms, border-color 200ms;
+  }
+  .theme-btn:hover { color: var(--fg); border-color: var(--dim); }
 
-  /* ─── Routing Timeline ────────────────────────── */
-  .timeline {
-    max-height: 520px; overflow-y: auto;
-    scrollbar-width: thin; scrollbar-color: var(--quaternary) transparent;
-  }
-  .timeline::-webkit-scrollbar { width: 5px; }
-  .timeline::-webkit-scrollbar-thumb { background: var(--quaternary); border-radius: 3px; }
-  .tl-entry {
-    display: flex; gap: 12px; padding: 12px 0;
-    border-bottom: 1px solid var(--separator); align-items: flex-start;
-    transition: transform 200ms var(--ease);
-  }
-  .tl-entry:last-child { border-bottom: none; }
-  .tl-entry:hover { transform: translateX(2px); }
-  .tl-time {
-    font-size: 12px; color: var(--tertiary); font-variant-numeric: tabular-nums;
-    width: 48px; flex-shrink: 0; padding-top: 3px;
-  }
-  .tl-date { font-size: 10px; color: var(--quaternary); display: block; }
-  .tl-model { flex-shrink: 0; display: flex; align-items: center; gap: 5px; padding-top: 1px; }
-  .model-badge {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    padding: 3px 10px; border-radius: 8px; letter-spacing: 0.03em;
-    white-space: nowrap;
-  }
-  .badge-opus { background: var(--purple-bg); color: var(--purple); }
-  .badge-sonnet { background: var(--blue-bg); color: var(--blue); }
-  .badge-haiku { background: var(--teal-bg); color: var(--teal); }
-  .badge-codex { background: var(--amber-bg); color: var(--amber); }
-  .delegation-arrow { color: var(--tertiary); font-size: 13px; font-weight: 600; }
-  .tl-body { flex: 1; min-width: 0; }
-  .tl-desc { font-size: 13px; color: var(--muted); line-height: 1.45; }
-  .tl-meta { display: flex; gap: 8px; margin-top: 4px; align-items: center; }
-  .tl-project { font-size: 11px; color: var(--tertiary); font-weight: 600; }
-  .tl-size {
-    font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px;
-    background: var(--separator); color: var(--tertiary);
-    letter-spacing: 0.04em;
-  }
-
-  /* ─── Tabs & Filters ──────────────────────────── */
-  .tab-bar { display: flex; gap: 4px; margin-bottom: 14px; }
-  .tab-btn {
-    font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 8px;
-    border: none; background: transparent; color: var(--tertiary);
-    cursor: pointer; transition: all 200ms var(--ease);
-    font-family: inherit; letter-spacing: -0.01em;
-  }
-  .tab-btn:hover { background: var(--separator); color: var(--muted); }
-  .tab-btn.active { background: var(--border); color: var(--fg); }
-  .filter-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
-  .filter-pill {
-    font-size: 11px; font-weight: 600; padding: 4px 12px; border-radius: 20px;
-    border: 1px solid var(--border); background: transparent;
-    color: var(--tertiary); cursor: pointer; transition: all 200ms var(--ease);
-    text-transform: uppercase; letter-spacing: 0.03em; font-family: inherit;
-  }
-  .filter-pill:hover { border-color: var(--muted); color: var(--muted); }
-  .filter-pill.active { color: var(--fg); background: var(--separator); border-color: var(--muted); }
-  .filter-pill.active.f-opus { background: var(--purple-bg); border-color: var(--purple); color: var(--purple); }
-  .filter-pill.active.f-sonnet { background: var(--blue-bg); border-color: var(--blue); color: var(--blue); }
-  .filter-pill.active.f-haiku { background: var(--teal-bg); border-color: var(--teal); color: var(--teal); }
-  .filter-pill.active.f-codex { background: var(--amber-bg); border-color: var(--amber); color: var(--amber); }
-
-  /* ─── Insights ────────────────────────────────── */
-  .insight {
-    padding: 14px 18px; border-radius: var(--radius-sm); margin-bottom: 10px;
-    border-left: 3px solid; transition: transform 200ms var(--ease);
-  }
-  .insight:hover { transform: translateX(2px); }
-  .insight:last-child { margin-bottom: 0; }
-  .insight.critical { background: var(--red-bg); border-color: var(--red); }
-  .insight.warning { background: var(--orange-bg); border-color: var(--orange); }
-  .insight.info { background: var(--teal-bg); border-color: var(--teal); }
-  .insight.success { background: var(--green-bg); border-color: var(--green); }
-  .insight-title { font-size: 14px; font-weight: 600; margin-bottom: 3px; color: var(--fg); }
-  .insight.critical .insight-title { color: var(--red); }
-  .insight.warning .insight-title { color: var(--orange); }
-  .insight.info .insight-title { color: var(--teal); }
-  .insight.success .insight-title { color: var(--green); }
-  .insight-detail { font-size: 13px; color: var(--muted); line-height: 1.45; margin-bottom: 6px; }
-  .insight-action { font-size: 12px; font-weight: 500; color: var(--blue); padding: 2px 0; line-height: 1.4; }
-
-  /* ─── Bar Charts ──────────────────────────────── */
-  .bar-item { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-  .bar-item:last-child { margin-bottom: 0; }
-  .bar-name {
-    font-size: 13px; font-weight: 500; color: var(--muted);
-    width: 64px; text-align: right; flex-shrink: 0;
-  }
-  .bar-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
-  .bar-fill { height: 100%; border-radius: 4px; transition: width 600ms var(--ease-smooth); }
-  .bar-count {
-    font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
-    width: 48px; text-align: right; flex-shrink: 0;
-  }
-  .fill-opus { background: var(--purple); }
-  .fill-sonnet { background: var(--blue); }
-  .fill-haiku { background: var(--teal); }
-  .fill-codex { background: var(--amber); }
-  .fill-green { background: var(--green); }
-  .fill-orange { background: var(--orange); }
-
-  /* ─── Cost Rows ───────────────────────────────── */
-  .cost-row {
-    display: flex; justify-content: space-between; align-items: center;
+  /* ─── Metrics bar ────────────────────────── */
+  .metrics {
+    display: flex; gap: 12px 20px; margin-bottom: 28px; flex-wrap: wrap;
     padding: 12px 0; border-bottom: 1px solid var(--separator);
   }
-  .cost-row:last-child { border-bottom: none; }
-  .cost-model { font-size: 14px; font-weight: 600; }
-  .cost-amount { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .cost-sub { font-size: 12px; color: var(--tertiary); margin-top: 2px; }
-  .cost-total {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 14px 0; margin-top: 4px; border-top: 2px solid var(--border);
-    font-size: 16px; font-weight: 700;
+  .metric { display: flex; align-items: baseline; gap: 6px; }
+  .metric-val {
+    font-family: var(--mono); font-size: 18px; font-weight: 600;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
   }
-  .savings-badge {
-    display: inline-block; font-size: 12px; font-weight: 600;
-    padding: 5px 12px; border-radius: 8px;
-    background: var(--green-bg); color: var(--green);
-  }
+  .metric-label { font-size: 12px; color: var(--dim); }
+  .metric-accent .metric-val { color: var(--accent); }
 
-  /* ─── Hour Heatmap ────────────────────────────── */
-  .hour-grid { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; }
-  .hour-cell {
-    aspect-ratio: 1; border-radius: 4px; position: relative;
-    transition: transform 200ms var(--ease);
+  /* ─── Cards ──────────────────────────────── */
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 12px; overflow: hidden; min-width: 0;
   }
-  .hour-cell:hover { transform: scale(1.3); z-index: 1; }
-  .hour-labels {
-    display: flex; justify-content: space-between; margin-top: 6px;
-    font-size: 10px; color: var(--quaternary);
+  .g2 > .card, .g2 > div > .card, .g2-eq > .card { margin-bottom: 0; }
+  .card-hd {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 12px;
   }
+  .card-hd h2 { font-size: 14px; font-weight: 600; }
+  .card-hd .ct { font-family: var(--mono); font-size: 11px; color: var(--dim); }
 
-  /* ─── Spark Chart ─────────────────────────────── */
-  .spark { display: flex; align-items: flex-end; gap: 2px; height: 48px; }
-  .spark-bar {
-    flex: 1; border-radius: 2px 2px 0 0; background: var(--blue);
-    opacity: 0.6; min-width: 2px; transition: opacity 200ms;
-  }
-  .spark-bar:hover { opacity: 1; }
+  /* ─── Grid ───────────────────────────────── */
+  .g2 { display: grid; grid-template-columns: 1fr 320px; gap: 12px; margin-bottom: 12px; }
+  .g2 > * { min-width: 0; overflow: hidden; }
+  .g2-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .g2-eq > * { min-width: 0; }
+  @media (max-width: 860px) { .g2 { grid-template-columns: 1fr; height: auto !important; } }
+  @media (max-width: 640px) { .g2-eq { grid-template-columns: 1fr; } }
 
-  /* ─── Projects ────────────────────────────────── */
-  .project-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 0; border-bottom: 1px solid var(--separator);
-  }
-  .project-row:last-child { border-bottom: none; }
-  .project-name { font-size: 14px; font-weight: 600; flex: 1; }
-  .project-msgs { font-size: 12px; color: var(--tertiary); font-variant-numeric: tabular-nums; }
+  /* ─── Model labels ───────────────────────── */
+  .ml { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+  .ml-opus { font-weight: 700; color: var(--tier-high); }
+  .ml-sonnet { font-weight: 500; color: var(--tier-mid); }
+  .ml-haiku { font-weight: 400; color: var(--tier-low); }
+  .ml-codex { font-weight: 400; font-style: italic; color: var(--tier-low); }
 
-  /* ─── Routing Stacked Bars ────────────────────── */
-  .routing-bar-row {
-    display: flex; align-items: center; gap: 10px;
-    padding: 8px 0; border-bottom: 1px solid var(--separator);
+  /* ─── Tabs / Filters ─────────────────────── */
+  .tabs { display: flex; gap: 2px; margin-bottom: 10px; }
+  .tab {
+    font-size: 12px; font-weight: 500; padding: 4px 12px; border-radius: 4px;
+    border: none; background: transparent; color: var(--dim);
+    cursor: pointer; font-family: inherit; transition: all 150ms;
   }
-  .routing-bar-row:last-child { border-bottom: none; }
-  .routing-bar-stack {
-    display: flex; height: 6px; border-radius: 3px; overflow: hidden;
-    gap: 1px; flex: 1;
-  }
+  .tab:hover { color: var(--muted); }
+  .tab.on { background: var(--faint); color: var(--fg); }
 
-  /* ─── Tips ────────────────────────────────────── */
-  .tips-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  @media (max-width: 700px) { .tips-grid { grid-template-columns: 1fr; } }
-  .tip {
-    background: var(--bg); border-radius: var(--radius-sm); padding: 16px;
-    transition: box-shadow 300ms var(--ease);
+  .filters { display: flex; gap: 4px; margin-bottom: 10px; }
+  .flt {
+    font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 4px;
+    border: 1px solid transparent; background: transparent; color: var(--dim);
+    cursor: pointer; font-family: var(--mono); transition: all 150ms;
   }
-  .tip:hover { box-shadow: var(--shadow-sm); }
-  .tip-title { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
-  .tip-body { font-size: 12px; color: var(--tertiary); line-height: 1.5; }
+  .flt:hover { color: var(--muted); }
+  .flt.on { border-color: var(--border); color: var(--fg); background: var(--separator); }
 
-  /* ─── Animations ──────────────────────────────── */
-  @keyframes fade-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-  .anim { animation: fade-up 500ms var(--ease-smooth) both; }
-  .d1 { animation-delay: 80ms; }
-  .d2 { animation-delay: 160ms; }
-  .d3 { animation-delay: 240ms; }
-  .d4 { animation-delay: 320ms; }
+  /* ─── Timeline ───────────────────────────── */
+  .tl-wrap { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+  .tl-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--separator); align-items: flex-start; min-width: 0; }
+  .tl-row:last-child { border-bottom: none; }
+  .tl-time { font-family: var(--mono); font-size: 11px; color: var(--dim); width: 40px; flex-shrink: 0; padding-top: 2px; }
+  .tl-time small { display: block; font-size: 10px; color: var(--dim); opacity: 0.6; }
+  .tl-model { flex-shrink: 0; min-width: 56px; padding-top: 2px; }
+  .tl-body { flex: 1; min-width: 0; }
+  .tl-desc { font-size: 13px; color: var(--muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tl-meta { display: flex; gap: 8px; margin-top: 2px; align-items: center; }
+  .tl-proj { font-size: 11px; color: var(--dim); font-weight: 500; }
+  .tl-sz { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+  .deleg-arrow { color: var(--dim); font-size: 11px; margin: 0 2px; }
 
-  .loading { text-align: center; padding: 100px 40px; color: var(--tertiary); font-size: 15px; }
-  #app { transition: opacity 180ms var(--ease); }
-  .footer {
-    text-align: center; padding: 24px; font-size: 12px; color: var(--quaternary);
-    margin-top: 8px;
-  }
+  /* ─── Insights ───────────────────────────── */
+  .ins-item { padding: 10px 0; border-bottom: 1px solid var(--separator); }
+  .ins-item:last-child { border-bottom: none; }
+  .ins-title { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+  .ins-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .ins-dot-crit { background: var(--danger); }
+  .ins-dot-warn { background: var(--accent); }
+  .ins-dot-info { background: var(--dim); }
+  .ins-dot-ok { background: #16a34a; }
+  .ins-detail { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 4px; }
+  .ins-action { font-size: 12px; color: var(--accent); }
+
+  /* ─── Hour grid ──────────────────────────── */
+  .hr-grid { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+  .hr-cell { aspect-ratio: 1; border-radius: 3px; }
+  .hr-labels { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: var(--dim); }
+
+  /* ─── (routing decisions merged into timeline) ── */
+
+  /* ─── Session costs ──────────────────────── */
+  .sc-summary { display: flex; gap: 12px 24px; flex-wrap: wrap; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--separator); }
+  .sc-stat-val { font-family: var(--mono); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sc-stat-label { font-size: 11px; color: var(--dim); }
+  .sc-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--separator); gap: 8px; min-width: 0; }
+  .sc-row:last-child { border-bottom: none; }
+
+  /* ─── Misc ───────────────────────────────── */
+  .empty { padding: 24px; text-align: center; color: var(--dim); font-size: 13px; }
+  .footer { text-align: center; padding: 24px 0; font-size: 11px; color: var(--dim); margin-top: 12px; }
+  .loading { text-align: center; padding: 120px 40px; color: var(--dim); font-size: 14px; }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .anim { animation: fadeIn 300ms both; }
+  .d1 { animation-delay: 50ms; }
+  .d2 { animation-delay: 100ms; }
+  .d3 { animation-delay: 150ms; }
+  .d4 { animation-delay: 200ms; }
+  .morph-ready .anim { animation: none; opacity: 1; }
+
+  .stat-val, .metric-val, .ct, .sc-stat-val { transition: color 200ms; }
+  [id^="v-"] { transition: opacity 100ms; }
 </style>
 </head>
 <body>
+<a href="#main-content" class="skip-link">Skip to content</a>
 <div class="page">
-  <div id="app"><div class="loading">Loading Token Coach&hellip;</div></div>
+  <div id="app" role="application" aria-label="Token Coach Dashboard"><div class="loading" role="status" aria-live="polite">Loading&hellip;</div></div>
 </div>
 
 <script>
 let DATA = null;
 let activeFilter = 'all';
-let timelineTab = 'auto'; // auto = show today if has tasks, else all
+let timelineTab = 'auto';
 
-// Theme persistence
-function getTheme() { return localStorage.getItem('token-coach-theme') || 'light'; }
-function setTheme(t) {
-  localStorage.setItem('token-coach-theme', t);
-  document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : '');
-}
+function getTheme() { return localStorage.getItem('token-coach-theme') || 'dark'; }
+function setTheme(t) { localStorage.setItem('token-coach-theme', t); document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : ''); }
 function toggleTheme() { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); render(); }
 setTheme(getTheme());
 
+function setText(id, val) { const el = document.getElementById(id); if (!el) return; const s = String(val); if (el.textContent !== s) el.textContent = s; }
+function setStyle(id, prop, val) { const el = document.getElementById(id); if (el && el.style[prop] !== val) el.style[prop] = val; }
+function setSection(id, html) {
+  const el = document.getElementById(id); if (!el) return;
+  if (el.innerHTML.replace(/\s+/g,' ').trim() === html.replace(/\s+/g,' ').trim()) return;
+  el.style.opacity = '0.3';
+  requestAnimationFrame(() => { el.innerHTML = html; requestAnimationFrame(() => { el.style.opacity = '1'; }); });
+}
+
+function softRefresh() {
+  const D = DATA; if (!D) return;
+  const s = D.stats, r = D.routing, today = r.todayStats, tab = getEffectiveTab();
+  setText('v-tasks', today.totalTasks);
+  setText('v-opus', today.models.opus || 0);
+  setText('v-sonnet', today.models.sonnet || 0);
+  setText('v-haiku', today.models.haiku || 0);
+  setText('v-deleg', today.delegations);
+  setText('v-cost', '~$' + (D.sessionCosts ? Object.values(D.sessionCosts.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0).toFixed(2) : '0.00'));
+  setText('v-total', r.totalTasks + ' total');
+  setText('v-tab-today', 'Today (' + today.totalTasks + ')');
+  setSection('v-timeline', renderTimeline(tab));
+  setText('v-ins-ct', D.insights.length);
+  setSection('v-insights', renderInsights(D.insights));
+  setSection('v-rd-strip', renderRoutingStrip(D.routingEvents));
+  setText('v-sc-ct', Object.keys(D.sessionCosts?.sessions||{}).length + ' today');
+  setSection('v-sc-body', renderSessionCosts(D.sessionCosts));
+  setText('v-learn-ct', (D.learning?.totalSamples || 0) + ' samples');
+  setSection('v-learn-body', renderLearning(D.learning));
+  setText('v-hogs-ct', ((D.tokenHogs?.totalToolCalls||0) + (D.tokenHogs?.totalDispatches||0)) + ' calls');
+  setSection('v-hogs-body', renderTokenHogs(D.tokenHogs));
+  setSection('v-hours', renderHourGrid(s.hourCounts));
+}
+
 async function load() {
-  const app = document.getElementById('app');
-  const isFirstLoad = !DATA;
+  const isFirst = !DATA;
   try {
-    const res = await fetch('/api/dashboard');
-    DATA = await res.json();
-    const scrollY = window.scrollY;
-    if (isFirstLoad) {
-      render();
-    } else {
-      // Crossfade: fade out, swap content, fade back in — no visible flash
-      app.style.opacity = '0';
-      // Wait for fade-out to complete before swapping content
-      await new Promise(r => setTimeout(r, 180));
-      render();
-      requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollY, behavior: 'instant' });
-        app.style.opacity = '1';
-      });
-    }
+    DATA = await (await fetch('/api/dashboard')).json();
+    isFirst ? render() : softRefresh();
   } catch (e) {
-    app.style.opacity = '1';
-    app.innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+    if (isFirst) document.getElementById('app').innerHTML = `<div class="loading">Error: ${e.message}</div>`;
   }
 }
 
 function $(v) { return typeof v === 'number' ? v.toLocaleString() : v; }
-function money(v) { return '$' + (v || 0).toFixed(2); }
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-function modelTier(m) {
-  if (m.includes('opus')) return 'opus';
-  if (m.includes('sonnet')) return 'sonnet';
-  if (m.includes('haiku')) return 'haiku';
-  if (m.includes('codex')) return 'codex';
-  return 'opus';
+function modelLabel(m) {
+  const t = m.includes('opus') ? 'opus' : m.includes('sonnet') ? 'sonnet' : m.includes('haiku') ? 'haiku' : m.includes('codex') ? 'codex' : m;
+  return `<span class="ml ml-${t}">${t}</span>`;
 }
-function badgeClass(m) { return 'badge-' + modelTier(m); }
 
 function getEffectiveTab() {
   if (timelineTab !== 'auto') return timelineTab;
   return DATA?.routing?.todayStats?.totalTasks > 0 ? 'today' : 'all';
 }
 
-function render() {
-  const D = DATA;
-  if (!D) return;
-  const s = D.stats;
-  const c = D.costs;
-  const o = D.optimal;
-  const r = D.routing;
-  const today = r.todayStats;
-  const effectiveTab = getEffectiveTab();
-  const isDark = getTheme() === 'dark';
+function buildHTML() {
+  const D = DATA; if (!D) return '';
+  const s = D.stats, r = D.routing, today = r.todayStats, tab = getEffectiveTab(), isDark = getTheme() === 'dark';
+  const totalCost = Object.values(D.sessionCosts?.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0);
 
-  document.getElementById('app').innerHTML = `
-    <!-- Header -->
-    <div class="page-header anim">
-      <div>
-        <h1>Token Coach</h1>
-        <p class="subtitle">Model routing transparency &middot; recommended vs actual usage</p>
-      </div>
-      <div class="header-right">
-        <div class="live-dot"></div>
-        <span class="refresh-label">Auto-refresh 60s</span>
-        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">${isDark ? '☀️' : '🌙'}</button>
-      </div>
+  return `
+    <header class="hdr anim" role="banner">
+      <h1>Token Coach</h1>
+      <nav class="hdr-right" aria-label="Dashboard controls">
+        <span class="hdr-live" role="status" aria-label="Live data updates active">Live</span>
+        <button class="theme-btn" onclick="toggleTheme()" aria-label="Switch to ${isDark ? 'light' : 'dark'} theme">${isDark ? 'Light' : 'Dark'}</button>
+      </nav>
+    </header>
+
+    <main id="main-content">
+    <section class="metrics anim d1" aria-label="Today's metrics">
+      <div class="metric"><span class="metric-val" id="v-tasks">${today.totalTasks}</span><span class="metric-label">tasks today</span></div>
+      <div class="metric"><span class="metric-val" id="v-opus">${today.models.opus||0}</span><span class="metric-label">opus</span></div>
+      <div class="metric"><span class="metric-val" id="v-sonnet">${today.models.sonnet||0}</span><span class="metric-label">sonnet</span></div>
+      <div class="metric"><span class="metric-val" id="v-haiku">${today.models.haiku||0}</span><span class="metric-label">haiku</span></div>
+      <div class="metric"><span class="metric-val" id="v-deleg">${today.delegations}</span><span class="metric-label">delegated</span></div>
+      <div class="metric metric-accent"><span class="metric-val" id="v-cost">~$${totalCost.toFixed(2)}</span><span class="metric-label">est. today</span></div>
     </div>
 
-    <!-- Today Strip -->
-    <div class="section-label anim d1">Today &mdash; ${today.date}</div>
-    <div class="stats-row anim d1">
-      <div class="stat">
-        <div class="stat-label">Tasks Today</div>
-        <div class="stat-val">${today.totalTasks}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Opus</div>
-        <div class="stat-val" style="color:var(--purple)">${today.models.opus || 0}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Sonnet</div>
-        <div class="stat-val" style="color:var(--blue)">${today.models.sonnet || 0}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Haiku</div>
-        <div class="stat-val" style="color:var(--teal)">${today.models.haiku || 0}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Delegated</div>
-        <div class="stat-val" style="color:var(--green)">${today.delegations}</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Delegation %</div>
-        <div class="stat-val" style="color:${r.delegationRate > 25 ? 'var(--green)' : 'var(--orange)'}">${r.delegationRate.toFixed(0)}%</div>
-      </div>
-    </div>
+    </section>
 
-    <!-- Main: Timeline + Sidebar -->
-    <div class="grid-main anim d2">
-      <div class="card">
-        <div class="card-title">
-          <span>Model Routing Timeline</span>
-          <span class="count">${r.totalTasks} total</span>
+    <div class="g2 anim d2" style="height:560px">
+      <div class="card" style="display:flex;flex-direction:column;min-height:0">
+        <div class="card-hd">
+          <h2>Routing timeline</h2>
+          <span class="ct" id="v-total">${r.totalTasks} total</span>
         </div>
-        <div class="tab-bar">
-          <button class="tab-btn ${effectiveTab === 'today' ? 'active' : ''}" onclick="setTab('today')">Today (${today.totalTasks})</button>
-          <button class="tab-btn ${effectiveTab === 'all' ? 'active' : ''}" onclick="setTab('all')">All Time</button>
+        <div id="v-rd-strip" style="display:flex;gap:8px 14px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--dim)">${renderRoutingStrip(D.routingEvents)}</div>
+        <div class="tabs" role="tablist" aria-label="Timeline time range">
+          <button class="tab ${tab==='today'?'on':''}" onclick="setTab('today')" id="v-tab-today" role="tab" aria-selected="${tab==='today'}" aria-controls="v-timeline">Today (${today.totalTasks})</button>
+          <button class="tab ${tab==='all'?'on':''}" onclick="setTab('all')" role="tab" aria-selected="${tab==='all'}" aria-controls="v-timeline">All time</button>
         </div>
-        <div class="filter-row">
-          <button class="filter-pill f-all ${activeFilter === 'all' ? 'active' : ''}" onclick="setFilter('all')">All</button>
-          <button class="filter-pill f-opus ${activeFilter === 'opus' ? 'active' : ''}" onclick="setFilter('opus')">Opus</button>
-          <button class="filter-pill f-sonnet ${activeFilter === 'sonnet' ? 'active' : ''}" onclick="setFilter('sonnet')">Sonnet</button>
-          <button class="filter-pill f-haiku ${activeFilter === 'haiku' ? 'active' : ''}" onclick="setFilter('haiku')">Haiku</button>
-          <button class="filter-pill f-codex ${activeFilter === 'codex' ? 'active' : ''}" onclick="setFilter('codex')">Codex</button>
+        <div class="filters" role="toolbar" aria-label="Filter by model">
+          <button class="flt ${activeFilter==='all'?'on':''}" onclick="setFilter('all')" aria-pressed="${activeFilter==='all'}">all</button>
+          <button class="flt ${activeFilter==='opus'?'on':''}" onclick="setFilter('opus')" aria-pressed="${activeFilter==='opus'}">opus</button>
+          <button class="flt ${activeFilter==='sonnet'?'on':''}" onclick="setFilter('sonnet')" aria-pressed="${activeFilter==='sonnet'}">sonnet</button>
+          <button class="flt ${activeFilter==='haiku'?'on':''}" onclick="setFilter('haiku')" aria-pressed="${activeFilter==='haiku'}">haiku</button>
         </div>
-        <div class="timeline">${renderTimeline(effectiveTab)}</div>
+        <div class="tl-wrap" id="v-timeline" role="tabpanel" aria-label="Routing timeline entries">${renderTimeline(tab)}</div>
       </div>
 
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div class="card" style="flex:1">
-          <div class="card-title">
-            <span>Insights</span>
-            <span class="count">${D.insights.length}</span>
+      <div style="display:flex;flex-direction:column;gap:12px;min-height:0">
+        <div class="card" style="flex:1;display:flex;flex-direction:column;min-height:0">
+          <div class="card-hd">
+            <h2>Insights</h2>
+            <span class="ct" id="v-ins-ct">${D.insights.length}</span>
           </div>
-          <div style="max-height:340px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--quaternary) transparent">
-            ${D.insights.map(i => `
-              <div class="insight ${i.severity}">
-                <div class="insight-title">${esc(i.title)}</div>
-                <div class="insight-detail">${esc(i.detail)}</div>
-                <div class="insight-action">&rarr; ${esc(i.action)}</div>
-              </div>
-            `).join('')}
+          <div id="v-insights" role="log" aria-label="Usage insights" aria-live="polite" style="flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--faint) transparent">
+            ${renderInsights(D.insights)}
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Smart Routing Decisions (from hooks) — THE PRIMARY VIEW -->
-    <div class="anim d3">
+    <div class="card anim d3">
+      <div class="card-hd">
+        <h2>Session costs</h2>
+        <span class="ct" id="v-sc-ct">${Object.keys(D.sessionCosts?.sessions||{}).length} today</span>
+      </div>
+      <div id="v-sc-body">${renderSessionCosts(D.sessionCosts)}</div>
+    </div>
+
+    <div class="card anim d3">
+      <div class="card-hd">
+        <h2>Adaptive learning</h2>
+        <span class="ct" id="v-learn-ct">${D.learning?.totalSamples || 0} samples</span>
+      </div>
+      <div id="v-learn-body">${renderLearning(D.learning)}</div>
+    </div>
+
+    <div class="card anim d3">
+      <div class="card-hd">
+        <h2>Token consumers</h2>
+        <span class="ct" id="v-hogs-ct">${(D.tokenHogs?.totalToolCalls||0) + (D.tokenHogs?.totalDispatches||0)} calls</span>
+      </div>
+      <div id="v-hogs-body">${renderTokenHogs(D.tokenHogs)}</div>
+    </div>
+
+    <div class="g2-eq anim d4">
       <div class="card">
-        <div class="card-title">
-          <span>Smart Routing Decisions</span>
-          <span class="count">${D.routingEvents?.stats?.total || 0} decisions</span>
+        <div class="card-hd"><h2>Activity by hour</h2></div>
+        <div id="v-hours">${renderHourGrid(s.hourCounts)}</div>
+        <div style="margin-top:16px;display:grid;grid-template-columns:1fr auto;gap:4px 16px;font-size:12px">
+          <span style="color:var(--dim)">Hook events</span><span style="font-family:var(--mono);font-variant-numeric:tabular-nums">${$(s.liveEvents||0)}</span>
+          <span style="color:var(--dim)">Routing decisions</span><span style="font-family:var(--mono);font-variant-numeric:tabular-nums">${$(s.liveDecisions||0)}</span>
+          <span style="color:var(--dim)">Date</span><span style="font-family:var(--mono)">${s.lastLiveDate||'—'}</span>
         </div>
-        ${renderRoutingDecisions(D.routingEvents)}
+      </div>
+      <div class="card">
+        <div class="card-hd"><h2>Quick tips</h2></div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.6">
+          <p style="margin-bottom:8px"><strong style="color:var(--fg)">Short sessions.</strong> Keep under 25 messages. Use /compact or start fresh.</p>
+          <p style="margin-bottom:8px"><strong style="color:var(--fg)">Route down.</strong> Searches &rarr; haiku. Edits &rarr; sonnet. Multi-file &rarr; opus.</p>
+          <p style="margin-bottom:8px"><strong style="color:var(--fg)">Parallel agents.</strong> Independent subtasks = parallel subagents, not sequential opus.</p>
+          <p><strong style="color:var(--fg)">Be specific.</strong> File paths, line numbers, exact changes. Vague = more tokens.</p>
+        </div>
       </div>
     </div>
 
-    <!-- Live Analytics -->
-    <div class="grid-2 anim d4">
-      <div class="card">
-        <div class="card-title">Activity by Hour <span style="font-size:11px;color:var(--tertiary);font-weight:400">(live hooks)</span></div>
-        ${renderHourGrid(s.hourCounts)}
-        <div style="margin-top:20px">
-          <div class="card-title" style="margin-bottom:10px">Overview</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div style="font-size:12px;color:var(--tertiary)">Hook Events</div>
-            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${$(s.liveEvents || 0)}</div>
-            <div style="font-size:12px;color:var(--tertiary)">Routing Decisions</div>
-            <div style="font-size:12px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">${$(s.liveDecisions || 0)}</div>
-            <div style="font-size:12px;color:var(--tertiary)">Today</div>
-            <div style="font-size:12px;font-weight:600;text-align:right">${s.lastLiveDate || 'N/A'}</div>
-            <div style="font-size:12px;color:var(--tertiary)">Tracking Since</div>
-            <div style="font-size:12px;font-weight:600;text-align:right">${s.firstSessionDate || 'N/A'}</div>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">Tips</div>
-        <div class="tips-grid">
-          <div class="tip"><div class="tip-title">Short sessions</div><div class="tip-body">Keep under 25 messages. Use /compact or start fresh.</div></div>
-          <div class="tip"><div class="tip-title">Route down</div><div class="tip-body">Searches &rarr; Haiku. Small edits &rarr; Sonnet. Multi-file &rarr; Opus.</div></div>
-          <div class="tip"><div class="tip-title">Parallel agents</div><div class="tip-body">Independent subtasks = parallel subagents, not sequential opus.</div></div>
-          <div class="tip"><div class="tip-title">Be specific</div><div class="tip-body">File paths, line numbers, exact changes. Vague = more tokens.</div></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="footer">
-      Live routing via hooks &middot; ${s.liveEvents || 0} events &middot; ${s.liveDecisions || 0} decisions &middot;
-      Today: ${s.lastLiveDate || 'N/A'} &middot; Refreshes every 60s
-    </div>
+    </main>
+    <footer class="footer" id="v-footer" role="contentinfo">${s.liveEvents||0} events &middot; ${s.liveDecisions||0} decisions &middot; ${s.lastLiveDate||'—'} &middot; refreshes every 30s</div>
   `;
 }
 
-/* ─── Renderers ─────────────────────────────────── */
+function render() {
+  if (!DATA) return;
+  document.getElementById('app').innerHTML = buildHTML();
+  requestAnimationFrame(() => { document.querySelector('.page').classList.add('morph-ready'); });
+}
 
-function renderRoutingDecisions(re) {
-  if (!re || !re.recent || !re.recent.length) {
-    return '<div style="padding:32px;text-align:center;color:var(--tertiary);font-size:14px">No routing events yet. Hooks will capture decisions as you use Claude Code.</div>';
+/* ─── Renderers ─────────────────────────────── */
+
+function renderTimeline(tab) {
+  if (!DATA) return '';
+  const r = DATA.routing;
+  let entries = tab === 'today' ? (r.todayStats.tasks || []) : DATA.taskLog;
+  if (activeFilter !== 'all') entries = entries.filter(t => t.model.includes(activeFilter));
+  if (!entries.length) return `<div class="empty">${tab === 'today' ? 'No tasks today' : 'No matching tasks'}</div>`;
+
+  return (tab === 'today' ? entries : entries.slice(0, 60)).map(t => {
+    const isDel = t.model.includes('>');
+    const time = t.timestamp.slice(11, 16);
+    let ml;
+    if (isDel) {
+      const [src, tgt] = t.model.split('>');
+      ml = modelLabel(src) + '<span class="deleg-arrow">&rarr;</span>' + modelLabel(tgt);
+    } else {
+      ml = modelLabel(t.model);
+    }
+    return `<div class="tl-row">
+      <div class="tl-time">${time}${tab==='all'?`<small>${t.timestamp.slice(5,10)}</small>`:''}</div>
+      <div class="tl-model">${ml}</div>
+      <div class="tl-body">
+        <div class="tl-desc">${esc(t.description)}</div>
+        <div class="tl-meta"><span class="tl-proj">${esc(t.project)}</span><span class="tl-sz">${t.size}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setTab(tab) {
+  timelineTab = tab;
+  const t = getEffectiveTab();
+  document.getElementById('v-timeline').innerHTML = renderTimeline(t);
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.textContent.toLowerCase().startsWith(t)));
+}
+function setFilter(filter) {
+  activeFilter = filter;
+  document.getElementById('v-timeline').innerHTML = renderTimeline(getEffectiveTab());
+  document.querySelectorAll('.flt').forEach(b => b.classList.toggle('on', b.textContent.trim() === filter));
+}
+
+function renderTokenHogs(hogs) {
+  if (!hogs || (hogs.totalToolCalls === 0 && hogs.totalDispatches === 0)) {
+    return '<div class="empty">No tool call data yet. Usage patterns will appear as hooks capture activity.</div>';
   }
 
-  const stats = re.stats || {};
-  const decisions = re.recent.filter(e => e.type === 'routing_decision' || e.type === 'subagent_dispatch');
+  let html = '';
 
-  // Stats strip
-  const total = stats.total || 0;
-  const rec = stats.byRecommended || {};
-  const delegated = stats.delegated || 0;
-  const delegationRate = stats.delegationRate || 0;
-  const optimal = stats.optimal || 0;
-  const suboptimal = stats.suboptimal || 0;
-
-  let html = `
-    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px">
-      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
-        <div style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums">${total}</div>
-        <div style="font-size:11px;color:var(--tertiary)">Prompts</div>
-      </div>
-      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
-        <div style="font-size:20px;font-weight:700;color:var(--haiku);font-variant-numeric:tabular-nums">${rec.haiku || 0}</div>
-        <div style="font-size:11px;color:var(--tertiary)">→ Haiku</div>
-      </div>
-      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
-        <div style="font-size:20px;font-weight:700;color:var(--sonnet);font-variant-numeric:tabular-nums">${rec.sonnet || 0}</div>
-        <div style="font-size:11px;color:var(--tertiary)">→ Sonnet</div>
-      </div>
-      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
-        <div style="font-size:20px;font-weight:700;color:var(--opus);font-variant-numeric:tabular-nums">${rec.opus || 0}</div>
-        <div style="font-size:11px;color:var(--tertiary)">→ Opus</div>
-      </div>
-      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
-        <div style="font-size:20px;font-weight:700;color:${delegated > 0 ? 'var(--success)' : '#f59e0b'};font-variant-numeric:tabular-nums">${delegated}</div>
-        <div style="font-size:11px;color:var(--tertiary)">Dispatched</div>
-      </div>
-      <div style="text-align:center;padding:8px;background:var(--card-alt);border-radius:8px">
-        <div style="font-size:20px;font-weight:700;color:${delegationRate > 25 ? 'var(--success)' : '#f59e0b'};font-variant-numeric:tabular-nums">${delegationRate}%</div>
-        <div style="font-size:11px;color:var(--tertiary)">Delegation</div>
-      </div>
-    </div>
-  `;
-
-  // Decision list
-  html += '<div style="max-height:400px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--quaternary) transparent">';
-
-  for (const ev of decisions.slice(0, 30)) {
-    const time = ev.ts ? new Date(ev.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    const date = ev.ts ? ev.ts.slice(0, 10) : '';
-
-    if (ev.type === 'routing_decision') {
-      const cls = ev.classification || {};
-      const recModel = ev.recommended_model || '?';
-      const modelColor = `var(--${recModel})`;
-      html += `
-        <div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <div style="display:flex;align-items:center;gap:8px">
-              <span class="model-badge" style="background:${modelColor};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase">${recModel}</span>
-              <span style="color:var(--tertiary);font-size:11px">${cls.family || '?'} · ${cls.complexity || '?'}</span>
-            </div>
-            <span style="color:var(--tertiary);font-size:11px">${date} ${time}</span>
-          </div>
-          <div style="color:var(--secondary);font-size:12px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(ev.prompt_preview || '')}</div>
-          <div style="color:var(--tertiary);font-size:11px;font-style:italic">${esc(ev.recommended_reason || '')}</div>
-        </div>
-      `;
-    } else if (ev.type === 'subagent_dispatch') {
-      const used = ev.model_used || '?';
-      const rec = ev.recommended_model || '?';
-      const optimal = ev.is_optimal;
-      const icon = optimal ? '✓' : '⚠';
-      const color = optimal ? 'var(--success)' : '#f59e0b';
-      html += `
-        <div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:13px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <div style="display:flex;align-items:center;gap:8px">
-              <span style="color:${color};font-weight:700">${icon}</span>
-              <span style="font-size:11px;font-weight:600">DISPATCH</span>
-              <span class="model-badge" style="background:var(--${used});color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase">${used}</span>
-              ${!optimal ? `<span style="font-size:11px;color:#f59e0b">should be ${rec}</span>` : ''}
-            </div>
-            <span style="color:var(--tertiary);font-size:11px">${date} ${time}</span>
-          </div>
-          <div style="color:var(--secondary);font-size:12px;margin-bottom:4px">${esc(ev.description || ev.agent_type || '')}</div>
-          <div style="color:var(--tertiary);font-size:11px;font-style:italic">${esc(ev.justification || '')}</div>
-        </div>
-      `;
+  // Agent types (most impactful — each dispatch = full model invocation)
+  if (hogs.agentTypes.length > 0) {
+    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;margin-bottom:6px">Agent dispatches</div>';
+    for (const a of hogs.agentTypes.slice(0, 8)) {
+      const models = Object.entries(a.models || {}).map(([m, c]) => `<span class="ml ml-${m}">${m}</span>&times;${c}`).join('  ');
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--separator)">
+        <span style="font-size:12px">${esc(a.name)}</span>
+        <span style="font-size:11px">${models} <span style="color:var(--dim);margin-left:6px;font-family:var(--mono)">${a.dispatches}</span></span>
+      </div>`;
     }
+    html += '</div>';
+  }
+
+  // MCP servers
+  if (hogs.mcpServers.length > 0) {
+    html += '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;margin-bottom:6px">MCP servers</div>';
+    for (const m of hogs.mcpServers.slice(0, 8)) {
+      const topTool = Object.entries(m.tools || {}).sort((a, b) => b[1] - a[1])[0];
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--separator)">
+        <div><span style="font-size:12px;font-weight:500">${esc(m.name)}</span>${topTool ? `<span style="font-size:11px;color:var(--dim);margin-left:8px">top: ${esc(topTool[0])}</span>` : ''}</div>
+        <span style="font-family:var(--mono);font-size:11px">${m.calls} calls</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  // Top tools overall
+  if (hogs.topTools.length > 0) {
+    html += '<div><div style="font-size:12px;font-weight:600;margin-bottom:6px">Top tools</div>';
+    const max = hogs.topTools[0]?.calls || 1;
+    for (const t of hogs.topTools.slice(0, 10)) {
+      const pct = Math.max((t.calls / max) * 100, 3);
+      const isMcp = t.name.startsWith('mcp__');
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+        <span style="font-size:11px;width:120px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isMcp ? 'color:var(--accent)' : ''}">${esc(t.name)}</span>
+        <div style="flex:1;height:4px;background:var(--separator);border-radius:2px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${isMcp ? 'var(--accent)' : 'var(--dim)'};border-radius:2px"></div>
+        </div>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--dim);width:32px;text-align:right;flex-shrink:0">${t.calls}</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  return html;
+}
+
+function renderRoutingStrip(re) {
+  if (!re?.stats) return '';
+  const s = re.stats, rec = s.byRecommended || {};
+  return `<span><strong style="font-family:var(--mono)">${s.total||0}</strong> classified</span>
+    <span><strong style="font-family:var(--mono)">${rec.haiku||0}</strong> haiku</span>
+    <span><strong style="font-family:var(--mono)">${rec.sonnet||0}</strong> sonnet</span>
+    <span><strong style="font-family:var(--mono)">${rec.opus||0}</strong> opus</span>
+    <span><strong style="font-family:var(--mono)">${s.delegated||0}</strong> dispatched</span>
+    <span><strong style="font-family:var(--mono)">${s.delegationRate||0}%</strong> delegation</span>`;
+}
+
+function renderSessionCosts(sc) {
+  const sessions = sc?.sessions || {};
+  const entries = Object.entries(sessions).sort((a, b) => (b[1].lastActivity||'').localeCompare(a[1].lastActivity||''));
+  if (!entries.length) return '<div class="empty">No session data yet.</div>';
+
+  let totalCost = 0, totalPrompts = 0;
+  for (const [, s] of entries) { totalCost += s.estimatedCost; totalPrompts += s.prompts; }
+
+  let html = `<div class="sc-summary">
+    <div><div class="sc-stat-val" style="color:var(--accent)">~$${totalCost.toFixed(2)}</div><div class="sc-stat-label">est. cost</div></div>
+    <div><div class="sc-stat-val">${totalPrompts}</div><div class="sc-stat-label">prompts</div></div>
+    <div><div class="sc-stat-val">${entries.length}</div><div class="sc-stat-label">sessions</div></div>
+  </div>`;
+
+  html += '<div style="max-height:240px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--faint) transparent">';
+  for (const [sid, s] of entries) {
+    const time = s.lastActivity ? new Date(s.lastActivity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const models = Object.entries(s.models||{}).map(([m,c]) => `<span class="ml ml-${m}">${m}</span> <span style="color:var(--dim);font-size:11px">&times;${c}</span>`).join('&nbsp;&nbsp;');
+    html += `<div class="sc-row">
+      <div>
+        <div style="font-size:13px;font-weight:500">${esc(s.project)} <span style="color:var(--dim);font-weight:400;font-size:11px;font-family:var(--mono)">${sid.slice(0,8)}</span></div>
+        <div style="margin-top:2px">${models}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">~$${s.estimatedCost.toFixed(2)}</div>
+        <div style="font-size:11px;color:var(--dim)">${s.prompts} prompts &middot; ${time}</div>
+      </div>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderLearning(learning) {
+  if (!learning || !learning.adjustments || !learning.adjustments.length) {
+    return `<div class="empty">Not enough data yet. The router needs ${5} samples per family to start learning.</div>`;
+  }
+
+  let html = `<div style="display:flex;gap:16px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--separator);font-size:12px">
+    <span><strong style="font-family:var(--mono)">${learning.totalSamples}</strong> total samples</span>
+    <span><strong style="font-family:var(--mono)">${learning.familiesTracked}</strong> families tracked</span>
+    <span><strong style="font-family:var(--mono)">${learning.adjustments.filter(a => a.adjustment?.suggestion === 'upgrade').length}</strong> suggested upgrades</span>
+    <span><strong style="font-family:var(--mono)">${learning.adjustments.filter(a => a.adjustment?.suggestion === 'downgrade').length}</strong> suggested downgrades</span>
+  </div>`;
+
+  html += '<div style="max-height:280px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--faint) transparent">';
+
+  for (const a of learning.adjustments) {
+    const pct = Math.round(a.rate * 100);
+    const barW = Math.max(pct, 3);
+    const barColor = pct >= 85 ? 'var(--accent)' : pct >= 60 ? 'var(--muted)' : 'var(--danger)';
+    const suggestion = a.adjustment?.suggestion || 'tracking';
+    const icon = suggestion === 'upgrade' ? '&uarr;' : suggestion === 'downgrade' ? '&darr;' : suggestion === 'confirm' ? '&check;' : '&middot;';
+    const sugColor = suggestion === 'upgrade' ? 'var(--danger)' : suggestion === 'downgrade' ? 'var(--accent)' : 'var(--dim)';
+
+    html += `<div style="padding:6px 0;border-bottom:1px solid var(--separator)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="ml ml-${a.model}">${a.model}</span>
+          <span style="font-size:11px;color:var(--dim)">${a.family}</span>
+          <span style="color:${sugColor};font-size:11px;font-weight:600">${icon} ${suggestion}</span>
+        </div>
+        <span style="font-family:var(--mono);font-size:12px;font-weight:600">${pct}%<span style="color:var(--dim);font-weight:400"> / ${a.samples}</span></span>
+      </div>
+      <div style="height:4px;background:var(--separator);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${barW}%;background:${barColor};border-radius:2px"></div>
+      </div>
+      ${a.adjustment?.reason ? `<div style="font-size:11px;color:var(--dim);margin-top:3px">${esc(a.adjustment.reason)}</div>` : ''}
+    </div>`;
   }
 
   html += '</div>';
   return html;
 }
 
-function renderTimeline(effectiveTab) {
-  if (!DATA) return '';
-  const r = DATA.routing;
-  let entries = effectiveTab === 'today' ? (r.todayStats.tasks || []) : DATA.taskLog;
+function renderInsights(insights) {
+  if (!insights?.length) return '<div class="empty">No insights yet.</div>';
+  const live = insights.filter(i => !i.title.startsWith('[Historical]'));
+  const hist = insights.filter(i => i.title.startsWith('[Historical]'));
 
-  if (activeFilter !== 'all') {
-    entries = entries.filter(t => t.model.includes(activeFilter));
-  }
-
-  if (!entries.length) {
-    return `<div style="padding:48px;text-align:center;color:var(--tertiary);font-size:14px">
-      ${effectiveTab === 'today' ? 'No tasks logged today yet' : 'No matching tasks'}
+  let html = '';
+  for (const i of live) {
+    const dot = i.severity === 'critical' ? 'crit' : i.severity === 'warning' ? 'warn' : i.severity === 'success' ? 'ok' : 'info';
+    html += `<div class="ins-item">
+      <div class="ins-title"><span class="ins-dot ins-dot-${dot}"></span>${esc(i.title)}</div>
+      <div class="ins-detail">${esc(i.detail)}</div>
+      <div class="ins-action">&rarr; ${esc(i.action)}</div>
     </div>`;
   }
-
-  return (effectiveTab === 'today' ? entries : entries.slice(0, 60)).map(t => {
-    const isDelegation = t.model.includes('>');
-    const time = t.timestamp.slice(11, 16);
-
-    let modelHtml;
-    if (isDelegation) {
-      const [src, tgt] = t.model.split('>');
-      modelHtml = `<span class="model-badge ${badgeClass(src)}">${src}</span>
-        <span class="delegation-arrow">&rarr;</span>
-        <span class="model-badge ${badgeClass(tgt)}">${tgt}</span>`;
-    } else {
-      modelHtml = `<span class="model-badge ${badgeClass(t.model)}">${t.model}</span>`;
+  if (hist.length) {
+    html += `<div style="margin-top:6px">
+      <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="font-size:11px;color:var(--dim);background:none;border:1px solid var(--border);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:inherit">${hist.length} historical</button>
+      <div style="display:none">`;
+    for (const i of hist) {
+      html += `<div class="ins-item" style="opacity:0.6">
+        <div class="ins-title"><span class="ins-dot ins-dot-info"></span>${esc(i.title)}</div>
+        <div class="ins-detail">${esc(i.detail)}</div>
+        <div class="ins-action">&rarr; ${esc(i.action)}</div>
+      </div>`;
     }
-
-    return `<div class="tl-entry">
-      <div class="tl-time">${time}${effectiveTab === 'all' ? `<span class="tl-date">${t.timestamp.slice(5, 10)}</span>` : ''}</div>
-      <div class="tl-model">${modelHtml}</div>
-      <div class="tl-body">
-        <div class="tl-desc">${esc(t.description)}</div>
-        <div class="tl-meta">
-          <span class="tl-project">${esc(t.project)}</span>
-          <span class="tl-size">${t.size}</span>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function setTab(tab) { timelineTab = tab; render(); }
-function setFilter(filter) { activeFilter = filter; render(); }
-
-function renderModelBars(summary) {
-  const entries = Object.entries(summary);
-  const total = entries.reduce((s, [, m]) => s + m.inputTokens + m.outputTokens, 0);
-  if (!total) return '<div style="color:var(--tertiary)">No token data</div>';
-  return entries.map(([tier, m]) => {
-    const pct = ((m.inputTokens + m.outputTokens) / total * 100);
-    return `<div class="bar-item">
-      <span class="bar-name">${tier}</span>
-      <div class="bar-track"><div class="bar-fill fill-${tier}" style="width:${Math.max(pct, 3)}%"></div></div>
-      <span class="bar-count">${pct.toFixed(0)}%</span>
-    </div>`;
-  }).join('');
-}
-
-function renderCacheBar(summary) {
-  let reads = 0, writes = 0, fresh = 0;
-  for (const m of Object.values(summary)) {
-    reads += m.cacheReadInputTokens || 0;
-    writes += m.cacheCreationInputTokens || 0;
-    fresh += m.inputTokens || 0;
+    html += '</div></div>';
   }
-  const total = reads + writes + fresh;
-  if (!total) return '';
-  return `
-    <div class="bar-item">
-      <span class="bar-name">Cache</span>
-      <div class="bar-track"><div class="bar-fill fill-green" style="width:${reads/total*100}%"></div></div>
-      <span class="bar-count">${(reads/total*100).toFixed(0)}%</span>
-    </div>
-    <div class="bar-item">
-      <span class="bar-name">Fresh</span>
-      <div class="bar-track"><div class="bar-fill fill-orange" style="width:${Math.max(fresh/total*100, 1)}%"></div></div>
-      <span class="bar-count">${(fresh/total*100).toFixed(1)}%</span>
-    </div>`;
-}
-
-function renderRoutingBars(r) {
-  const total = r.totalTasks;
-  if (!total) return '<div style="color:var(--tertiary)">No tasks logged</div>';
-  const counts = { opus: r.directRuns.opus || 0, sonnet: r.directRuns.sonnet || 0, haiku: r.directRuns.haiku || 0, codex: r.directRuns.codex || 0 };
-  for (const [key, val] of Object.entries(r.delegations)) {
-    const target = key.split('>')[1];
-    const tier = ['opus','sonnet','haiku','codex'].find(m => target.includes(m)) || target;
-    counts[tier] = (counts[tier] || 0) + val;
-  }
-  return ['opus','sonnet','haiku','codex'].filter(m => counts[m] > 0).map(m => {
-    const pct = counts[m] / total * 100;
-    return `<div class="bar-item">
-      <span class="bar-name">${m}</span>
-      <div class="bar-track"><div class="bar-fill fill-${m}" style="width:${Math.max(pct, 3)}%"></div></div>
-      <span class="bar-count">${counts[m]}</span>
-    </div>`;
-  }).join('');
-}
-
-function renderProjectRouting(r) {
-  const projects = Object.entries(r.byProject).sort((a, b) => b[1].total - a[1].total).slice(0, 8);
-  if (!projects.length) return '<div style="color:var(--tertiary)">No data</div>';
-  return projects.map(([name, stats]) => {
-    const t = stats.total;
-    return `<div class="routing-bar-row">
-      <div style="font-size:13px;font-weight:600;width:100px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</div>
-      <div class="routing-bar-stack">
-        ${stats.opus > 0 ? `<div style="width:${stats.opus/t*100}%;background:var(--purple);border-radius:3px"></div>` : ''}
-        ${stats.sonnet > 0 ? `<div style="width:${stats.sonnet/t*100}%;background:var(--blue);border-radius:3px"></div>` : ''}
-        ${stats.haiku > 0 ? `<div style="width:${stats.haiku/t*100}%;background:var(--teal);border-radius:3px"></div>` : ''}
-        ${stats.codex > 0 ? `<div style="width:${stats.codex/t*100}%;background:var(--amber);border-radius:3px"></div>` : ''}
-      </div>
-      <div style="font-size:11px;color:var(--tertiary);width:36px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums">${t}</div>
-    </div>`;
-  }).join('');
+  return html;
 }
 
 function renderHourGrid(hours) {
   const isDark = getTheme() === 'dark';
-  const max = Math.max(...Object.values(hours), 1);
-  let html = '<div class="hour-grid">';
+  const max = Math.max(...Object.values(hours||{}), 1);
+  let html = '<div class="hr-grid" role="img" aria-label="Activity heatmap by hour of day">';
   for (let h = 0; h < 24; h++) {
-    const count = hours[String(h)] || 0;
-    const intensity = count / max;
-    const bg = intensity === 0 ? 'var(--border)'
-      : isDark ? `rgba(108, 180, 255, ${0.1 + intensity * 0.65})`
-      : `rgba(0, 96, 194, ${0.1 + intensity * 0.75})`;
-    html += `<div class="hour-cell" style="background:${bg}" title="${h}:00 — ${count} sessions"></div>`;
+    const c = (hours||{})[String(h)] || 0;
+    const i = c / max;
+    const bg = i === 0 ? 'var(--separator)'
+      : isDark ? `rgba(212, 168, 67, ${0.1 + i * 0.6})`
+      : `rgba(180, 132, 31, ${0.08 + i * 0.65})`;
+    html += `<div class="hr-cell" style="background:${bg}" title="${h}:00 — ${c} events" role="img" aria-label="${h}:00: ${c} events"></div>`;
   }
-  html += '</div><div class="hour-labels"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span></div>';
+  html += '</div><div class="hr-labels"><span>0h</span><span>6h</span><span>12h</span><span>18h</span><span>24h</span></div>';
   return html;
 }
 
-function renderSpark(daily) {
-  if (!daily.length) return '';
-  const max = Math.max(...daily.map(d => d.messages), 1);
-  return daily.map(d => {
-    const h = Math.max((d.messages / max) * 100, 2);
-    return `<div class="spark-bar" style="height:${h}%;opacity:${0.3 + (d.messages/max)*0.7}" title="${d.date}: ${d.messages} msgs"></div>`;
-  }).join('');
-}
-
 load();
-setInterval(load, 60000);
+setInterval(load, 30000);
 </script>
 </body>
 </html>

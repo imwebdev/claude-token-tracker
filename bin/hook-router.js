@@ -83,11 +83,52 @@ function handleUserPromptSubmit(input) {
     : recommendation.model === 'sonnet' ? '↓ REDIRECT to sonnet subagent'
     : '● Handle directly on opus';
 
+  // Session cost tracking
+  const sessionCost = events.getSessionCost(input.session_id);
+  const promptCost = events.estimatePromptCost(recommendation.model);
+  const totalCost = sessionCost.estimatedCost + promptCost;
+  const costStr = totalCost < 0.01 ? '<$0.01' : `~$${totalCost.toFixed(2)}`;
+  const promptCount = sessionCost.prompts + 1;
+  const costColor = totalCost > 2 ? '\x1b[31m' : totalCost > 0.5 ? '\x1b[33m' : '\x1b[32m';
+
+  // ── Warnings ──
+  const warnings = [];
+  const yellow = '\x1b[33m';
+
+  // Session length warning (#37)
+  if (promptCount >= 20 && promptCount % 5 === 0) {
+    warnings.push(`${yellow}⚠ Session has ${promptCount} prompts (${costStr}). Consider /compact or starting fresh.${reset}`);
+  }
+
+  // Budget alert (#21)
+  try {
+    const config = require(path.join(ROOT, 'src', 'config'));
+    const cfg = config.read();
+    if (cfg.daily_alert && totalCost >= cfg.daily_alert) {
+      warnings.push(`${yellow}⚠ Daily spend ~$${totalCost.toFixed(2)} has reached your alert threshold ($${cfg.daily_alert}).${reset}`);
+    }
+    if (cfg.daily_cap && totalCost >= cfg.daily_cap) {
+      warnings.push(`\x1b[31m⛔ Daily cap ($${cfg.daily_cap}) reached. Consider stopping or switching to cheaper models.${reset}`);
+    }
+  } catch {}
+
+  // Vague/long prompt warning (#38)
+  if (prompt.length > 500 && classification.family === 'unknown') {
+    warnings.push(`${yellow}⚠ Long prompt (${prompt.length} chars) classified as unknown — vague prompts waste tokens. Be specific: file paths, line numbers, exact changes.${reset}`);
+  }
+
+  // Check if learner adjusted the recommendation
+  const learned = recommendation.reasons.some(r => r.startsWith('[learned]'));
+  const learnLine = learned ? `  ${bold}  Learned:${reset} ${'\x1b[36m'}${recommendation.reasons.filter(r => r.startsWith('[learned]')).map(r => r.replace('[learned] ', '')).join('; ')}${reset}` : null;
+
   const lines = [
     `${dim}───────────────────────────────────────${reset}`,
     `${bold}⚡ TOKEN COACH${reset}  ${classification.family} ${dim}(${classification.complexity}, ${confidence} conf)${reset}`,
-    `${bold}  Model:${reset} ${color}${recommendation.model.toUpperCase()}${reset}  ${dim}${recommendation.reasons.join('; ')}${reset}`,
+    `${bold}  Model:${reset} ${color}${recommendation.model.toUpperCase()}${reset}  ${dim}${recommendation.reasons.filter(r => !r.startsWith('[learned]')).join('; ')}${reset}`,
     `${bold}  Action:${reset} ${color}${action}${reset}`,
+    ...(learnLine ? [learnLine] : []),
+    `${bold}  Session:${reset} ${costColor}${costStr}${reset} ${dim}(${promptCount} prompts)${reset}`,
+    ...warnings,
     `${dim}───────────────────────────────────────${reset}`,
   ];
   process.stderr.write(lines.join('\n') + '\n');
@@ -187,6 +228,8 @@ function handlePreToolUse(input) {
         : toolName === 'Write' ? `write ${toolInput.file_path || ''}`
         : toolName === 'Edit' ? `edit ${toolInput.file_path || ''}`
         : toolName === 'Agent' ? `agent(${toolInput.model || 'opus'}) ${(toolInput.description || '').slice(0, 80)}`
+        : toolName === 'Skill' ? `Skill:${toolInput.skill || toolInput.name || 'unknown'}`
+        : toolName.startsWith('mcp__') ? toolName
         : toolName,
     });
   }

@@ -5,6 +5,7 @@ const parser = require('./parser');
 const calculator = require('./calculator');
 const { generateInsights } = require('./insights');
 const events = require('./events');
+const { getLearningStats } = require('./learner');
 
 const PORT = process.env.PORT || 6099;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -82,20 +83,25 @@ function buildDashboardData() {
   const dailyLogs = parser.readDailyLogs();
   const runs = parser.readRuns();
   const benchmarkSummary = parser.readBenchmarkSummary();
-  const taskLog = runs.length ? runs.map(run => ({
+  // Merge both data sources: CSV task log + ledger runs
+  const csvLog = parser.readTaskLog();
+  const runsLog = runs.map(run => ({
     timestamp: run.createdAt,
     project: run.project,
     model: run.finalModel || run.recommendation?.model || 'unknown',
     size: run.classification?.complexity === 'high' ? 'L' : run.classification?.complexity === 'low' ? 'S' : 'M',
     description: run.task,
-  })) : parser.readTaskLog();
+  }));
+  // Combine and sort by timestamp (newest last)
+  const taskLog = [...csvLog, ...runsLog].sort((a, b) =>
+    (a.timestamp || '').localeCompare(b.timestamp || ''));
   const projects = parser.getProjects(history);
 
   // Extend cached stats with live history data to fill the gap
   const liveStats = extendStatsWithHistory(stats, history, dailyLogs);
 
-  // Routing analytics (the core feature)
-  const routing = parser.analyzeRouting(taskLog);
+  // Routing analytics computed after hook event merge below
+  let routing;
 
   // MCP server info per project
   const mcpServers = {};
@@ -143,7 +149,39 @@ function buildDashboardData() {
 
   // Live routing events from hooks
   const routingStats = events.getRoutingStats();
-  const recentEvents = events.readEvents({ limit: 200 });
+  const recentEvents = events.readEvents({ limit: 500 });
+
+  // Merge hook routing_decision events into the taskLog so "All Time" timeline is complete
+  const hookDecisions = recentEvents.filter(e => e.type === 'routing_decision');
+  const existingTimestamps = new Set(taskLog.map(t => t.timestamp));
+  for (const d of hookDecisions) {
+    if (!d.ts || existingTimestamps.has(d.ts)) continue;
+    taskLog.push({
+      timestamp: d.ts,
+      project: d.project || 'unknown',
+      model: d.recommended_model || 'sonnet',
+      size: d.classification?.complexity === 'high' ? 'L' : d.classification?.complexity === 'low' ? 'S' : 'M',
+      description: d.prompt_preview || d.recommended_reason || 'task',
+    });
+  }
+  // Also merge subagent_dispatch events as delegation entries (opus>sonnet etc)
+  const hookDispatches = recentEvents.filter(e => e.type === 'subagent_dispatch');
+  for (const d of hookDispatches) {
+    if (!d.ts || existingTimestamps.has(d.ts)) continue;
+    const src = d.parent_model || 'opus';
+    const tgt = d.model_used || d.recommended_model || 'sonnet';
+    taskLog.push({
+      timestamp: d.ts,
+      project: d.project || 'unknown',
+      model: src + '>' + tgt,
+      size: 'M',
+      description: d.description || d.agent_type || 'subagent dispatch',
+    });
+  }
+  taskLog.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+
+  // Now compute routing analytics with the complete merged taskLog
+  routing = parser.analyzeRouting(taskLog);
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -170,13 +208,21 @@ function buildDashboardData() {
 
   // Override today stats with hook data when hook data is richer
   if (todayDecisions.length > (routing.todayStats?.totalTasks || 0)) {
+    // Build task entries from hook routing_decision events
+    const hookTasks = todayDecisions.map(d => ({
+      timestamp: d.ts,
+      project: d.project || 'unknown',
+      model: d.recommended_model || 'sonnet',
+      size: d.classification?.complexity === 'high' ? 'L' : d.classification?.complexity === 'low' ? 'S' : 'M',
+      description: d.prompt_preview || d.recommended_reason || 'task',
+    }));
     routing.todayStats = {
       ...routing.todayStats,
       date: todayStr,
       totalTasks: todayDecisions.length,
       models: hookTodayModels,
       delegations: todayDispatches.length,
-      tasks: routing.todayStats?.tasks || [],
+      tasks: hookTasks,
     };
     routing.delegationRate = todayDecisions.length > 0
       ? (todayDispatches.length / todayDecisions.length * 100) : 0;
@@ -222,11 +268,27 @@ function buildDashboardData() {
       stats: routingStats,
       recent: recentEvents.slice(-100).reverse(),
     },
+    // Per-session cost tracking
+    sessionCosts: events.getSessionCosts(),
+    // Adaptive learning stats
+    learning: getLearningStats(),
+    // Token hog analysis
+    tokenHogs: events.getTokenHogs(),
   };
 }
 
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:6099',
+  'http://127.0.0.1:6099',
+  `http://localhost:${PORT}`,
+  `http://127.0.0.1:${PORT}`,
+]);
+
 const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin || '';
+  if (ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
 
   if (req.url === '/api/routing') {
     try {
@@ -253,12 +315,20 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Serve static files
-  let filePath = req.url === '/' ? '/index.html' : req.url;
-  filePath = path.join(PUBLIC_DIR, filePath);
+  // Serve static files — with path containment check
+  let filePath = req.url === '/' ? '/index.html' : decodeURIComponent(req.url.split('?')[0]);
+  filePath = path.resolve(PUBLIC_DIR, '.' + filePath);
+
+  // Prevent path traversal — resolved path must stay inside PUBLIC_DIR
+  if (!filePath.startsWith(PUBLIC_DIR + path.sep) && filePath !== PUBLIC_DIR) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+
   const ext = path.extname(filePath);
 
-  if (fs.existsSync(filePath)) {
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     res.writeHead(200, { 'Content-Type': MIME[ext] || 'text/plain' });
     res.end(fs.readFileSync(filePath));
   } else {
@@ -268,7 +338,7 @@ const server = http.createServer((req, res) => {
 });
 
 if (require.main === module) {
-  const HOST = process.env.HOST || '0.0.0.0';
+  const HOST = process.env.HOST || '127.0.0.1';
   server.listen(PORT, HOST, () => {
     console.log(`Claude Token Coach: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   });

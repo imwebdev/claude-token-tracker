@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const ledger = require('./ledger');
 const { buildEscalationChain, getNextModel } = require('./escalation');
-const { classifyTask, expectedExecutionMode, recommendModel } = require('./router');
+const { classifyTask, recommendModel } = require('./router');
 const { validateResult } = require('./validator');
 
 function buildExecutionPrompt(task, cwd) {
@@ -79,8 +79,9 @@ function snapshotFiles(cwd) {
   return result;
 }
 
-function executePrintMode(model, task, cwd, classification) {
+function executePrintMode(model, task, cwd, classification, opts = {}) {
   const beforeFiles = snapshotFiles(cwd);
+  const permMode = opts.unsafe ? 'bypassPermissions' : 'default';
   const args = [
     '-p',
     '--model',
@@ -88,7 +89,7 @@ function executePrintMode(model, task, cwd, classification) {
     '--output-format',
     'text',
     '--permission-mode',
-    'bypassPermissions',
+    permMode,
     '--add-dir',
     cwd,
     '--no-session-persistence',
@@ -116,6 +117,7 @@ function parseRunArgs(args) {
   return {
     dryRun: args.includes('--dry-run'),
     forceExecute: args.includes('--execute'),
+    unsafe: args.includes('--unsafe'),
   };
 }
 
@@ -143,8 +145,11 @@ function runTaskCommand(task, args = [], cwd = process.cwd()) {
   const options = parseRunArgs(args);
   const classification = classifyTask(task);
   const recommendation = recommendModel(classification);
-  const autoMode = expectedExecutionMode(classification);
-  const mode = options.forceExecute ? autoMode : (options.dryRun ? 'route-only' : 'route-only');
+  const mode = options.forceExecute ? 'execute' : 'route-only';
+
+  if (options.unsafe && options.forceExecute) {
+    console.log('\n  ⚠ WARNING: --unsafe mode bypasses all permission checks.\n  Claude will have unrestricted access to your file system and commands.\n');
+  }
   const run = ledger.startRun({ task, cwd, classification, recommendation, mode });
 
   if (mode === 'route-only') {
@@ -172,7 +177,7 @@ function runTaskCommand(task, args = [], cwd = process.cwd()) {
     });
     ledger.appendAttempt(run, attempt);
 
-    const execution = executePrintMode(currentModel, task, cwd, classification);
+    const execution = executePrintMode(currentModel, task, cwd, classification, options);
     const validation = validateResult(classification, execution);
     ledger.recordAttemptResult(run, index, {
       ...execution,

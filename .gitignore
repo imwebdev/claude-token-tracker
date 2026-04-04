@@ -1,4 +1,6 @@
 node_modules/
 task-log.csv
 .codex
+.claude/
 docs/plans/
+docs/internal/
