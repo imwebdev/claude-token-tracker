@@ -150,11 +150,22 @@ function handleUserPromptSubmit(input) {
   ];
   process.stderr.write(lines.join('\n') + '\n');
 
-  // Inject routing guidance as additional context
+  // Inject routing guidance as additional context.
+  // NOTE: stderr is NOT displayed by Claude Code for exit-0 hooks, so the
+  // colored banner above is invisible in practice.  Everything the user sees
+  // must travel through additionalContext (stdout JSON → system-reminder).
+  const warningLines = warnings.length > 0
+    ? ' WARNINGS: ' + warnings.map(w => w.replace(/\x1b\[[0-9;]*m/g, '')).join(' | ')
+    : '';
+  const learnNote = learned
+    ? ` Learned: ${recommendation.reasons.filter(r => r.startsWith('[learned]')).map(r => r.replace('[learned] ', '')).join('; ')}.`
+    : '';
+
   const ctx = [
     `[claude-token-tracker] Task classified: ${classification.family} (${classification.complexity} complexity, ${confidence} confidence).`,
     `Recommended model: ${recommendation.model.toUpperCase()}.`,
-    `Reason: ${recommendation.reasons.join('; ')}.`,
+    `Reason: ${recommendation.reasons.filter(r => !r.startsWith('[learned]')).join('; ')}.${learnNote}`,
+    `Session: ${costStr} (${promptCount} prompts).${warningLines}`,
   ];
 
   if (recommendation.model === 'haiku') {
@@ -164,6 +175,10 @@ function handleUserPromptSubmit(input) {
   } else {
     ctx.push('ACTION: Handle directly -- this needs opus-level reasoning.');
   }
+
+  // Display instruction — ensures the banner is visible even without a
+  // project CLAUDE.md that tells Claude to echo routing info.
+  ctx.push('DISPLAY: At the very start of your response, on its own line, print a one-line routing summary in this exact format: > **[token-tracker]** MODEL task_family (complexity) -- action. Example: > **[token-tracker]** HAIKU search_read (low) -- dispatching to haiku subagent. This line is mandatory.');
 
   return {
     hookSpecificOutput: {
