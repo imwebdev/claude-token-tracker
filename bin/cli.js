@@ -27,6 +27,8 @@ if (command === 'serve' || command === 'dashboard') {
   printBenchmarks();
 } else if (command === 'init' || command === 'setup') {
   printInit(args.slice(1));
+} else if (command === 'uninstall' || command === 'remove') {
+  require(path.join(__dirname, '..', 'src', 'uninstall-command')).run(args.slice(1));
 } else if (command === 'doctor') {
   printInit(['--doctor']);
 } else if (command === 'config') {

@@ -7,12 +7,20 @@ Save money on Claude Code. It watches your prompts in real-time and routes each 
 ```bash
 git clone https://github.com/imwebdev/claude-token-tracker.git
 cd claude-token-tracker
-node bin/cli.js init --port 6099
+node bin/cli.js init
 ```
 
-Change `6099` to any port you want. No `npm install` needed. Zero dependencies. You are done.
+No `npm install` needed. Zero dependencies.
 
-**Important:** Restart Claude Code (exit and relaunch) after install for the routing hooks to take effect.
+**Then restart Claude Code** (exit completely and relaunch). Hooks do not take effect until you restart.
+
+To verify everything is working:
+
+```bash
+node bin/cli.js doctor
+```
+
+All checks should pass. If any fail, the output tells you exactly what to fix.
 
 ---
 
@@ -52,49 +60,16 @@ That is it. That is the whole thing. You do not need to learn any commands. Just
 
 ## Uninstall
 
-To fully remove Claude Token Tracker:
-
-**1. Remove the hooks from Claude Code**
-
-Open `~/.claude/settings.json` in a text editor and delete the `hooks` section that references `hook-router.js`. A backup of your original settings was saved as `~/.claude/settings.json.backup` during install — you can restore it:
-
 ```bash
-cp ~/.claude/settings.json.backup ~/.claude/settings.json
+cd claude-token-tracker
+node bin/cli.js uninstall
 ```
 
-**2. Stop and remove the dashboard process**
+This removes hooks from Claude Code, stops the dashboard, and removes global commands. It will ask before deleting your data.
 
-```bash
-pm2 stop claude-token-tracker
-pm2 delete claude-token-tracker
-```
+Then restart Claude Code (exit and relaunch).
 
-(Skip this step if you did not install PM2 or never started the dashboard.)
-
-**3. Delete the repo folder**
-
-```bash
-rm -rf /path/to/claude-token-tracker
-```
-
-Replace `/path/to/` with wherever you cloned it.
-
-**4. Delete your local data**
-
-```bash
-rm -rf ~/.token-coach
-```
-
-This removes all logs, settings, and recorded events.
-
-**5. Optional: remove the global CLI shortcut**
-
-If you ran `npm link`, undo it:
-
-```bash
-cd /path/to/claude-token-tracker
-npm unlink
-```
+To also delete the repo folder afterward: `rm -rf claude-token-tracker`
 
 ---
 

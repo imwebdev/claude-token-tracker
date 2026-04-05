@@ -11,8 +11,9 @@ Claude Token Tracker is an autonomous model router, benchmarker, and waste audit
 ```bash
 # Setup
 node bin/cli.js init              # Install hooks, config, start dashboard
-node bin/cli.js doctor            # Health check
+node bin/cli.js doctor            # Health check (9 checks incl. end-to-end hook test)
 node bin/cli.js update            # Pull latest + restart dashboard
+node bin/cli.js uninstall         # Remove hooks, stop dashboard, clean up
 
 # Config
 node bin/cli.js config                          # View all

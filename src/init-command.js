@@ -212,8 +212,124 @@ function runDiagnostics() {
     warn(`Router test: expected haiku, got ${r.model} (${c.family})`);
   }
 
+  // 7. End-to-end hook test
+  total++;
+  const repoDir = path.resolve(path.join(__dirname, '..'));
+  const hookScript = path.resolve(path.join(repoDir, 'bin', 'hook-router.js'));
+  const testInput = JSON.stringify({
+    hook_event_name: 'UserPromptSubmit',
+    prompt: 'search for all files matching the pattern in this repo',
+    cwd: repoDir,
+    session_id: 'doctor-test',
+  });
+  try {
+    const result = execSync(
+      `echo '${testInput.replace(/'/g, "'\\''")}' | node "${hookScript}"`,
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
+    );
+    const parsed = JSON.parse(result);
+    if (parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext) {
+      ok('Hook fires correctly (end-to-end verified)');
+      pass++;
+    } else {
+      fail('Hook returned unexpected output');
+      info('Output: ' + result.slice(0, 200));
+    }
+  } catch (e) {
+    fail('Hook does NOT work -- Claude Code will not show routing advice');
+    if (e.stderr) info('Error: ' + e.stderr.toString().trim().slice(0, 200));
+    else info('Error: ' + e.message.slice(0, 200));
+  }
+
+  // 8. Check for recent hook errors
+  total++;
+  const errLog = path.join(dataHome.getDataHome(), 'hook-errors.log');
+  if (fs.existsSync(errLog)) {
+    const content = fs.readFileSync(errLog, 'utf-8').trim();
+    const lines = content.split('\n');
+    const recent = lines.slice(-5).join('\n');
+    if (content.length > 0) {
+      warn(`Hook error log has entries (${lines.length} lines)`);
+      info('Recent errors:');
+      recent.split('\n').forEach(l => info('  ' + l));
+    } else {
+      ok('No hook errors logged');
+      pass++;
+    }
+  } else {
+    ok('No hook errors logged');
+    pass++;
+  }
+
+  // 9. Verify settings.json hook path matches this repo
+  total++;
+  const hookCmd = settings.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command || '';
+  if (hookCmd.includes(hookScript)) {
+    ok('Hook path in settings.json matches this repo');
+    pass++;
+  } else if (hookCmd.includes('hook-router.js')) {
+    fail('Hook path in settings.json points to WRONG location');
+    info('Expected: node ' + hookScript);
+    info('Found:    ' + hookCmd);
+    info('Fix: re-run "node bin/cli.js init" from this directory');
+  } else {
+    fail('No hook-router.js found in settings.json');
+    info('Fix: run "node bin/cli.js init"');
+  }
+
   console.log(`\n  ${bold}${pass}/${total} checks passed${reset}\n`);
   return pass === total;
+}
+
+function verifyHookWorks(repoDir) {
+  const hookScript = path.resolve(path.join(repoDir, 'bin', 'hook-router.js'));
+  const testInput = JSON.stringify({
+    hook_event_name: 'UserPromptSubmit',
+    prompt: 'search for all files matching the pattern in this repo',
+    cwd: repoDir,
+    session_id: 'init-test',
+  });
+
+  try {
+    const result = execSync(
+      `echo '${testInput.replace(/'/g, "'\\''")}' | node "${hookScript}"`,
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
+    );
+
+    // Should return JSON with hookSpecificOutput containing additionalContext
+    const parsed = JSON.parse(result);
+    if (parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext) {
+      ok('Hook verification passed -- fired hook and got valid routing output');
+    } else {
+      warn('Hook returned unexpected output -- may not work correctly');
+      info('Output: ' + result.slice(0, 200));
+    }
+  } catch (e) {
+    fail('Hook verification FAILED -- the hook will not work');
+    if (e.stderr) {
+      info('Error: ' + e.stderr.toString().trim().slice(0, 200));
+    } else {
+      info('Error: ' + e.message.slice(0, 200));
+    }
+    // Check for common issues
+    if (!fs.existsSync(hookScript)) {
+      info('Hook script not found at: ' + hookScript);
+    }
+    try {
+      execSync('node --version', { encoding: 'utf-8', stdio: 'pipe' });
+    } catch {
+      info('Node.js may not be in PATH');
+    }
+    // Check if settings.json has the right path
+    const settings = readSettings();
+    const hookCmd = settings.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command || '';
+    if (hookCmd && !hookCmd.includes(hookScript)) {
+      fail('settings.json hook path does not match repo location!');
+      info('Expected: node ' + hookScript);
+      info('Found:    ' + hookCmd);
+      info('Re-run init from the correct directory.');
+    }
+  }
 }
 
 function parsePort(args) {
@@ -282,19 +398,34 @@ function printInit(args = []) {
   // Step 5: PM2 dashboard
   setupPm2(repoDir);
 
-  // Step 6: Validation
+  // Step 6: npm link (makes `claude-tokens` and `token-coach` available globally)
+  try {
+    execSync('npm link 2>/dev/null', { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' });
+    ok('Global commands installed (claude-tokens, token-coach)');
+  } catch {
+    info('Could not run npm link -- run with sudo or use: node bin/cli.js <command>');
+  }
+
+  // Step 7: Validate router
   console.log('');
   const c = classifyTask('search for all files containing TODO');
   const r = recommendModel(c);
-  ok(`Router test: "search for TODOs" → ${r.model} (${c.family}/${c.complexity})`);
+  ok(`Router test: "search for TODOs" -> ${r.model} (${c.family}/${c.complexity})`);
+
+  // Step 8: End-to-end hook verification — actually fire the hook and check output
+  verifyHookWorks(repoDir);
 
   const port = getPort();
   console.log(`\n  ${bold}Setup complete!${reset}`);
   console.log(`  Dashboard: ${green}http://localhost:${port}${reset}`);
   console.log(`  Config:    ${dim}${config.configPath()}${reset}`);
   console.log(`  Data:      ${dim}${dataHome.getDataHome()}${reset}`);
-  console.log(`\n  ${yellow}[!!] Restart Claude Code${reset} (exit and relaunch) for hooks to take effect.`);
-  console.log(`  Run ${bold}claude-tokens doctor${reset} anytime to check health.\n`);
+  console.log('');
+  console.log(`  ${bold}${yellow}>>> RESTART CLAUDE CODE <<<${reset}`);
+  console.log(`  ${yellow}Exit Claude Code completely and relaunch it.${reset}`);
+  console.log(`  ${yellow}Hooks do not take effect until you restart.${reset}`);
+  console.log('');
+  console.log(`  Run ${bold}node bin/cli.js doctor${reset} anytime to check health.\n`);
 }
 
 module.exports = { printInit, runDiagnostics };

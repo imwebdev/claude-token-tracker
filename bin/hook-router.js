@@ -12,6 +12,8 @@
  * - SessionStart: Log session model
  * - Stop: Write session summary
  */
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 // Resolve modules relative to package root
@@ -324,6 +326,14 @@ async function main() {
 }
 
 main().catch(err => {
+  // Log errors to file so users can diagnose silent failures
+  try {
+    const logDir = process.env.TOKEN_COACH_HOME || path.join(os.homedir(), '.token-coach');
+    fs.mkdirSync(logDir, { recursive: true });
+    const logFile = path.join(logDir, 'hook-errors.log');
+    const ts = new Date().toISOString();
+    fs.appendFileSync(logFile, `${ts} ${err.message}\n${err.stack}\n\n`);
+  } catch (_) { /* can't even log — give up silently */ }
   process.stderr.write(`Token Coach hook error: ${err.message}\n`);
   process.exit(1); // Non-zero but not 2 — don't block
 });
