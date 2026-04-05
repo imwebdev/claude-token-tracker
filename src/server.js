@@ -7,7 +7,8 @@ const { generateInsights } = require('./insights');
 const events = require('./events');
 const { getLearningStats } = require('./learner');
 
-const PORT = process.env.PORT || 6099;
+const config = require('./config');
+const PORT = process.env.PORT || config.read().dashboard_port || 6099;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const MIME = {
@@ -278,8 +279,6 @@ function buildDashboardData() {
 }
 
 const ALLOWED_ORIGINS = new Set([
-  'http://localhost:6099',
-  'http://127.0.0.1:6099',
   `http://localhost:${PORT}`,
   `http://127.0.0.1:${PORT}`,
 ]);

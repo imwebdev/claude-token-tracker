@@ -98,13 +98,19 @@ function installHooks(settings) {
   return { installed, skipped };
 }
 
+function getPort() {
+  const cfg = config.read();
+  return cfg.dashboard_port || 6099;
+}
+
 function setupPm2(repoDir) {
+  const port = getPort();
   try {
     execSync('which pm2', { encoding: 'utf-8', stdio: 'pipe' });
   } catch {
     warn('PM2 not installed — skipping dashboard auto-start');
     info('Install PM2 globally: npm install -g pm2');
-    info('Then run: pm2 start src/server.js --name claude-token-tracker');
+    info(`Then run: PORT=${port} pm2 start src/server.js --name claude-token-tracker`);
     return false;
   }
 
@@ -113,19 +119,18 @@ function setupPm2(repoDir) {
     const procs = JSON.parse(list);
     const existing = procs.find(p => p.name === 'claude-token-tracker');
     if (existing) {
-      execSync('pm2 restart claude-token-tracker', { encoding: 'utf-8', stdio: 'pipe' });
-      ok('Restarted existing PM2 dashboard process');
-      return true;
+      // Delete and re-create so env vars are updated
+      execSync('pm2 delete claude-token-tracker', { encoding: 'utf-8', stdio: 'pipe' });
     }
   } catch {}
 
   try {
-    execSync(`pm2 start ${path.join(repoDir, 'src', 'server.js')} --name claude-token-tracker`, {
+    execSync(`PORT=${port} pm2 start ${path.join(repoDir, 'src', 'server.js')} --name claude-token-tracker`, {
       encoding: 'utf-8',
       stdio: 'pipe',
       cwd: repoDir,
     });
-    ok('Started dashboard via PM2 (http://localhost:6099)');
+    ok(`Started dashboard via PM2 (http://localhost:${port})`);
     return true;
   } catch (e) {
     warn('Could not start PM2 process: ' + e.message);
@@ -181,24 +186,16 @@ function runDiagnostics() {
 
   // 5. Dashboard reachable
   total++;
+  const port = getPort();
   try {
-    const http = require('http');
-    const check = new Promise((resolve) => {
-      const req = http.get('http://localhost:6099/api/dashboard', (res) => {
-        resolve(res.statusCode === 200);
-      });
-      req.on('error', () => resolve(false));
-      req.setTimeout(2000, () => { req.destroy(); resolve(false); });
-    });
-    // Can't await in sync context, so just check PM2
     const list = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf-8' });
     const procs = JSON.parse(list);
     const proc = procs.find(p => p.name === 'claude-token-tracker');
     if (proc && proc.pm2_env?.status === 'online') {
-      ok('Dashboard running via PM2');
+      ok(`Dashboard running via PM2 (port ${port})`);
       pass++;
     } else {
-      warn('Dashboard not running — start with: claude-tokens dashboard');
+      warn(`Dashboard not running — start with: claude-tokens dashboard`);
     }
   } catch {
     warn('Dashboard not running — start with: claude-tokens dashboard');
@@ -219,6 +216,15 @@ function runDiagnostics() {
   return pass === total;
 }
 
+function parsePort(args) {
+  const idx = args.indexOf('--port');
+  if (idx !== -1 && args[idx + 1]) {
+    const p = parseInt(args[idx + 1], 10);
+    if (p > 0 && p < 65536) return p;
+  }
+  return null;
+}
+
 function printInit(args = []) {
   const repoDir = path.resolve(path.join(__dirname, '..'));
   const isDiagnose = args.includes('--doctor') || args.includes('doctor');
@@ -229,6 +235,12 @@ function printInit(args = []) {
   }
 
   console.log(`\n  ${bold}Claude Token Tracker — Setup${reset}\n`);
+
+  // Step 0: Parse --port flag and save to config early (before PM2 needs it)
+  const portArg = parsePort(args);
+  if (portArg) {
+    config.set('dashboard_port', portArg);
+  }
 
   // Step 1: Check Claude CLI
   if (checkClaude()) {
@@ -252,6 +264,10 @@ function printInit(args = []) {
     info(`Routing preference: ${cfg.routing_preference}/100`);
   }
 
+  if (portArg) {
+    ok(`Dashboard port set to ${portArg}`);
+  }
+
   // Step 4: Install hooks
   const settings = readSettings();
   const { installed, skipped } = installHooks(settings);
@@ -272,11 +288,13 @@ function printInit(args = []) {
   const r = recommendModel(c);
   ok(`Router test: "search for TODOs" → ${r.model} (${c.family}/${c.complexity})`);
 
+  const port = getPort();
   console.log(`\n  ${bold}Setup complete!${reset}`);
-  console.log(`  Dashboard: ${green}http://localhost:6099${reset}`);
+  console.log(`  Dashboard: ${green}http://localhost:${port}${reset}`);
   console.log(`  Config:    ${dim}${config.configPath()}${reset}`);
   console.log(`  Data:      ${dim}${dataHome.getDataHome()}${reset}`);
-  console.log(`\n  Run ${bold}claude-tokens doctor${reset} anytime to check health.\n`);
+  console.log(`\n  ${yellow}⚠ Restart Claude Code${reset} (exit and relaunch) for hooks to take effect.`);
+  console.log(`  Run ${bold}claude-tokens doctor${reset} anytime to check health.\n`);
 }
 
 module.exports = { printInit, runDiagnostics };

@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK_SCRIPT="$SCRIPT_DIR/bin/hook-router.js"
 SETTINGS_FILE="$HOME/.claude/settings.json"
 DATA_DIR="$HOME/.token-coach"
+PORT="${1:-6099}"
 
 echo "╔══════════════════════════════════════╗"
 echo "║   Token Coach — Smart Model Router   ║"
@@ -118,16 +119,28 @@ echo "│    # or                                 │"
 echo "│    pm2 start src/server.js \\            │"
 echo "│      --name token-coach                 │"
 echo "│                                         │"
-echo "│  Open: http://localhost:6099            │"
+echo "│  Open: http://localhost:$PORT             │"
+echo "│                                         │"
+echo "│  ⚠ Restart Claude Code for hooks to     │"
+echo "│    take effect (exit and relaunch)       │"
 echo "└─────────────────────────────────────────┘"
 echo ""
+
+# Save port to config if non-default
+if [ "$PORT" != "6099" ]; then
+  node -e "
+    const config = require('$SCRIPT_DIR/src/config');
+    config.set('dashboard_port', $PORT);
+    console.log('✓ Dashboard port saved to config: $PORT');
+  "
+fi
 
 if command -v pm2 &>/dev/null; then
   read -p "Start dashboard with PM2? [y/N] " -n 1 -r
   echo ""
   if [[ $REPLY =~ ^[Yy]$ ]]; then
     cd "$SCRIPT_DIR"
-    pm2 start src/server.js --name token-coach 2>/dev/null || pm2 restart token-coach
-    echo "✓ Dashboard running at http://localhost:6099"
+    PORT=$PORT pm2 start src/server.js --name token-coach 2>/dev/null || pm2 restart token-coach
+    echo "✓ Dashboard running at http://localhost:$PORT"
   fi
 fi

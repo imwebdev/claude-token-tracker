@@ -13,6 +13,9 @@ const DEFAULTS = {
   // Daily budget alerts (USD). null = disabled.
   daily_alert: null,
   daily_cap: null,
+
+  // Dashboard port. null = use default 6099.
+  dashboard_port: null,
 };
 
 let _cache = null;

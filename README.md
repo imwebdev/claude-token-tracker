@@ -10,7 +10,15 @@ cd claude-token-tracker
 node bin/cli.js init
 ```
 
+To run the dashboard on a different port:
+
+```bash
+node bin/cli.js init --port 8080
+```
+
 No `npm install` needed. Zero dependencies. You are done.
+
+**Important:** Restart Claude Code (exit and relaunch) after install for the routing hooks to take effect.
 
 ---
 
@@ -134,9 +142,10 @@ All commands work as `node bin/cli.js <command>` from the repo folder, or as `cl
 **Setup and health**
 
 ```bash
-node bin/cli.js init          # First-time setup
-node bin/cli.js doctor        # Health check -- verify hooks, data dir, dashboard
-node bin/cli.js update        # Pull latest updates, restart dashboard
+node bin/cli.js init              # First-time setup (default port 6099)
+node bin/cli.js init --port 8080  # First-time setup on custom port
+node bin/cli.js doctor            # Health check -- verify hooks, data dir, dashboard
+node bin/cli.js update            # Pull latest updates, restart dashboard
 ```
 
 **Analytics**
@@ -148,16 +157,17 @@ node bin/cli.js insights     # Actionable recommendations
 node bin/cli.js learn        # What the router has learned from your usage
 node bin/cli.js audit        # Waste audit (over-routing, unnecessary escalations)
 node bin/cli.js benchmark    # Benchmark data from recorded runs
-node bin/cli.js dashboard    # Start the web dashboard (http://localhost:6099)
+node bin/cli.js dashboard    # Start the web dashboard (uses configured port, default 6099)
 ```
 
 **Configuration**
 
 ```bash
-node bin/cli.js config                         # View all settings
-node bin/cli.js config routing_preference 20   # Set cost preference (0-100)
-node bin/cli.js config daily_alert 5           # Warn when daily spend hits $5
-node bin/cli.js config daily_cap 20            # Alert when daily spend hits $20
+node bin/cli.js config                          # View all settings
+node bin/cli.js config routing_preference 20    # Set cost preference (0-100)
+node bin/cli.js config daily_alert 5            # Warn when daily spend hits $5
+node bin/cli.js config daily_cap 20             # Alert when daily spend hits $20
+node bin/cli.js config dashboard_port 8080      # Change dashboard port
 ```
 
 **Task execution (advanced)**
@@ -243,7 +253,7 @@ node bin/cli.js learn
 
 ### Web dashboard
 
-A local dashboard at `http://localhost:6099` shows:
+A local dashboard (default `http://localhost:6099`, configurable via `--port` or `config dashboard_port`) shows:
 
 - Today's task count by model, delegation rate, and estimated cost
 - Every classified prompt with model, family, project, and status
@@ -257,6 +267,7 @@ Start it manually:
 
 ```bash
 node bin/cli.js dashboard
+node bin/cli.js dashboard --port 8080   # override port for this session
 ```
 
 Or run it persistently with PM2 (survives terminal close and reboots):
@@ -265,7 +276,7 @@ Or run it persistently with PM2 (survives terminal close and reboots):
 pm2 start src/server.js --name claude-token-tracker
 ```
 
-Override the port: `PORT=8080 node bin/cli.js dashboard`
+The port is read from config (`dashboard_port`), then the `PORT` env var, then defaults to 6099.
 
 The dashboard auto-refreshes every 30 seconds.
 

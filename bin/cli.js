@@ -13,6 +13,11 @@ const args = process.argv.slice(2);
 const command = args[0] || 'summary';
 
 if (command === 'serve' || command === 'dashboard') {
+  // Allow --port flag to override: node bin/cli.js dashboard --port 8080
+  const portIdx = args.indexOf('--port');
+  if (portIdx !== -1 && args[portIdx + 1] && !process.env.PORT) {
+    process.env.PORT = args[portIdx + 1];
+  }
   require(path.join(__dirname, '..', 'src', 'server'));
 } else if (command === 'run') {
   runTaskCommand(args.slice(1).filter(arg => !arg.startsWith('--')).join(' '), args.slice(1));
@@ -214,6 +219,18 @@ function handleConfig(args) {
   else if (value === 'true') parsed = true;
   else if (value === 'false') parsed = false;
   else if (!isNaN(Number(value))) parsed = Number(value);
+
+  // Validate dashboard_port range
+  if (key === 'dashboard_port' && typeof parsed === 'number') {
+    if (parsed < 1 || parsed > 65535) {
+      console.error('  Error: dashboard_port must be 1-65535');
+      process.exit(1);
+    }
+    config.set(key, parsed);
+    console.log(`\n  ✓ ${key} set to ${parsed}`);
+    console.log(`  Restart the dashboard for this to take effect.\n`);
+    return;
+  }
 
   // Validate routing_preference range
   if ((key === 'routing_preference' || key === '--preference') && typeof parsed === 'number') {
