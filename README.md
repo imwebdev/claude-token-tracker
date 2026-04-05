@@ -7,16 +7,10 @@ Save money on Claude Code. It watches your prompts in real-time and routes each 
 ```bash
 git clone https://github.com/imwebdev/claude-token-tracker.git
 cd claude-token-tracker
-node bin/cli.js init
+node bin/cli.js init --port 6099
 ```
 
-To run the dashboard on a different port:
-
-```bash
-node bin/cli.js init --port 8080
-```
-
-No `npm install` needed. Zero dependencies. You are done.
+Change `6099` to any port you want. No `npm install` needed. Zero dependencies. You are done.
 
 **Important:** Restart Claude Code (exit and relaunch) after install for the routing hooks to take effect.
 
