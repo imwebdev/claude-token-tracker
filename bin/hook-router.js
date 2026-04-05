@@ -73,15 +73,26 @@ function handleUserPromptSubmit(input) {
 
   // ── Console output (stderr → visible to user) ──
   const confidence = classification.confidence >= 0.7 ? 'high' : 'moderate';
-  const modelColors = { haiku: '\x1b[32m', sonnet: '\x1b[33m', opus: '\x1b[35m' };
-  const color = modelColors[recommendation.model] || '\x1b[37m';
-  const reset = '\x1b[0m';
-  const dim = '\x1b[2m';
-  const bold = '\x1b[1m';
 
-  const action = recommendation.model === 'haiku' ? '↓ REDIRECT to haiku subagent'
-    : recommendation.model === 'sonnet' ? '↓ REDIRECT to sonnet subagent'
-    : '● Handle directly on opus';
+  // Muted ANSI 256-color palette — sidebar annotation style
+  const reset   = '\x1b[0m';
+  const dim     = '\x1b[2m';
+  const bold    = '\x1b[1m';
+  // Structural chrome
+  const gray    = '\x1b[38;5;243m';   // dim gray for borders/secondary labels
+  const amber   = '\x1b[38;5;136m';   // warm gold for the TOKEN COACH header
+  const muted   = '\x1b[38;5;245m';   // mid-gray for metadata / reasons
+  // Model identity — subtle differentiation, same family
+  const modelColors = {
+    haiku:  '\x1b[38;5;109m',         // muted slate-blue
+    sonnet: '\x1b[38;5;143m',         // muted olive-green
+    opus:   '\x1b[38;5;180m',         // muted peach/terracotta
+  };
+  const color = modelColors[recommendation.model] || '\x1b[38;5;245m';
+
+  const action = recommendation.model === 'haiku' ? '↓ redirect → haiku subagent'
+    : recommendation.model === 'sonnet' ? '↓ redirect → sonnet subagent'
+    : '● handle directly (opus)';
 
   // Session cost tracking
   const sessionCost = events.getSessionCost(input.session_id);
@@ -89,15 +100,19 @@ function handleUserPromptSubmit(input) {
   const totalCost = sessionCost.estimatedCost + promptCost;
   const costStr = totalCost < 0.01 ? '<$0.01' : `~$${totalCost.toFixed(2)}`;
   const promptCount = sessionCost.prompts + 1;
-  const costColor = totalCost > 2 ? '\x1b[31m' : totalCost > 0.5 ? '\x1b[33m' : '\x1b[32m';
+  // Cost severity uses same amber/peach family — no jarring reds unless truly critical
+  const costColor = totalCost > 2 ? '\x1b[38;5;167m'   // muted red-rose
+    : totalCost > 0.5 ? '\x1b[38;5;136m'               // amber
+    : '\x1b[38;5;107m';                                 // muted sage-green
 
   // ── Warnings ──
   const warnings = [];
-  const yellow = '\x1b[33m';
+  const warnColor  = '\x1b[38;5;136m';  // amber — same family, not a screaming yellow
+  const alertColor = '\x1b[38;5;167m';  // muted rose — visible but not full red
 
   // Session length warning (#37)
   if (promptCount >= 20 && promptCount % 5 === 0) {
-    warnings.push(`${yellow}⚠ Session has ${promptCount} prompts (${costStr}). Consider /compact or starting fresh.${reset}`);
+    warnings.push(`${warnColor}⚠ Session has ${promptCount} prompts (${costStr}). Consider /compact or starting fresh.${reset}`);
   }
 
   // Budget alert (#21)
@@ -105,31 +120,31 @@ function handleUserPromptSubmit(input) {
     const config = require(path.join(ROOT, 'src', 'config'));
     const cfg = config.read();
     if (cfg.daily_alert && totalCost >= cfg.daily_alert) {
-      warnings.push(`${yellow}⚠ Daily spend ~$${totalCost.toFixed(2)} has reached your alert threshold ($${cfg.daily_alert}).${reset}`);
+      warnings.push(`${warnColor}⚠ Daily spend ~$${totalCost.toFixed(2)} has reached your alert threshold ($${cfg.daily_alert}).${reset}`);
     }
     if (cfg.daily_cap && totalCost >= cfg.daily_cap) {
-      warnings.push(`\x1b[31m⛔ Daily cap ($${cfg.daily_cap}) reached. Consider stopping or switching to cheaper models.${reset}`);
+      warnings.push(`${alertColor}⛔ Daily cap ($${cfg.daily_cap}) reached. Consider stopping or switching to cheaper models.${reset}`);
     }
   } catch {}
 
   // Vague/long prompt warning (#38)
   if (prompt.length > 500 && classification.family === 'unknown') {
-    warnings.push(`${yellow}⚠ Long prompt (${prompt.length} chars) classified as unknown — vague prompts waste tokens. Be specific: file paths, line numbers, exact changes.${reset}`);
+    warnings.push(`${warnColor}⚠ Long prompt (${prompt.length} chars) classified as unknown — vague prompts waste tokens. Be specific: file paths, line numbers, exact changes.${reset}`);
   }
 
   // Check if learner adjusted the recommendation
   const learned = recommendation.reasons.some(r => r.startsWith('[learned]'));
-  const learnLine = learned ? `  ${bold}  Learned:${reset} ${'\x1b[36m'}${recommendation.reasons.filter(r => r.startsWith('[learned]')).map(r => r.replace('[learned] ', '')).join('; ')}${reset}` : null;
+  const learnLine = learned ? `  ${gray}Learned:${reset} ${muted}${recommendation.reasons.filter(r => r.startsWith('[learned]')).map(r => r.replace('[learned] ', '')).join('; ')}${reset}` : null;
 
   const lines = [
-    `${dim}───────────────────────────────────────${reset}`,
-    `${bold}⚡ TOKEN COACH${reset}  ${classification.family} ${dim}(${classification.complexity}, ${confidence} conf)${reset}`,
-    `${bold}  Model:${reset} ${color}${recommendation.model.toUpperCase()}${reset}  ${dim}${recommendation.reasons.filter(r => !r.startsWith('[learned]')).join('; ')}${reset}`,
-    `${bold}  Action:${reset} ${color}${action}${reset}`,
+    `${gray}· · · · · · · · · · · · · · · · · · · ·${reset}`,
+    `${amber}${bold}TOKEN COACH${reset}  ${gray}${classification.family} (${classification.complexity}, ${confidence} conf)${reset}`,
+    `  ${gray}model:${reset}   ${color}${recommendation.model}${reset}  ${muted}${recommendation.reasons.filter(r => !r.startsWith('[learned]')).join('; ')}${reset}`,
+    `  ${gray}action:${reset}  ${color}${action}${reset}`,
     ...(learnLine ? [learnLine] : []),
-    `${bold}  Session:${reset} ${costColor}${costStr}${reset} ${dim}(${promptCount} prompts)${reset}`,
+    `  ${gray}session:${reset} ${costColor}${costStr}${reset} ${gray}(${promptCount} prompts)${reset}`,
     ...warnings,
-    `${dim}───────────────────────────────────────${reset}`,
+    `${gray}· · · · · · · · · · · · · · · · · · · ·${reset}`,
   ];
   process.stderr.write(lines.join('\n') + '\n');
 
@@ -190,20 +205,24 @@ function handlePreToolUse(input) {
     });
 
     // ── Console output for subagent dispatches ──
-    const dim = '\x1b[2m';
     const reset = '\x1b[0m';
-    const bold = '\x1b[1m';
-    const modelColors = { haiku: '\x1b[32m', sonnet: '\x1b[33m', opus: '\x1b[35m' };
-    const color = modelColors[modelTier] || '\x1b[37m';
+    const gray  = '\x1b[38;5;243m';
+    const muted = '\x1b[38;5;245m';
+    const modelColors = {
+      haiku:  '\x1b[38;5;109m',
+      sonnet: '\x1b[38;5;143m',
+      opus:   '\x1b[38;5;180m',
+    };
+    const color = modelColors[modelTier] || '\x1b[38;5;245m';
     const arrow = isOptimal ? '✓' : '⚠';
-    const arrowColor = isOptimal ? '\x1b[32m' : '\x1b[31m';
+    const arrowColor = isOptimal ? '\x1b[38;5;107m' : '\x1b[38;5;136m';  // sage-green or amber
     const desc = description.slice(0, 50);
     const statusMsg = isOptimal
-      ? `${arrowColor}${arrow}${reset} optimal`
-      : `${arrowColor}${arrow}${reset} used ${modelTier} — ${recommendation.model} would suffice`;
+      ? `${arrowColor}${arrow}${reset} ${muted}optimal${reset}`
+      : `${arrowColor}${arrow}${reset} ${muted}used ${modelTier} — ${recommendation.model} would suffice${reset}`;
 
     process.stderr.write(
-      `${dim}  ↳${reset} ${bold}Subagent${reset} ${color}${modelTier.toUpperCase()}${reset} ${dim}${agentType}${reset} "${desc}" ${statusMsg}\n`
+      `${gray}  ↳ subagent${reset} ${color}${modelTier}${reset} ${gray}${agentType}${reset} ${muted}"${desc}"${reset} ${statusMsg}\n`
     );
 
     // If model is more expensive than needed, add context (but don't block)
