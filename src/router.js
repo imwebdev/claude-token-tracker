@@ -56,7 +56,7 @@ function classifyTask(task = '') {
   let complexity = 'medium';
   let confidence = 0.4;
 
-  // Check custom rules FIRST — they take precedence over keyword classification
+  // Check custom rules FIRST -- they take precedence over keyword classification
   try {
     const customMatch = applyCustomRules(task);
     if (customMatch) {
@@ -72,14 +72,14 @@ function classifyTask(task = '') {
       };
     }
   } catch {
-    // Rules module unavailable — fall through to default classification
+    // Rules module unavailable -- fall through to default classification
   }
 
   // Check for complexity modifiers first
   const isComplex = matchesAny(text, PATTERNS.complex);
   const isSimple = matchesAny(text, PATTERNS.simple);
 
-  // Score each family by number of pattern matches — highest wins
+  // Score each family by number of pattern matches -- highest wins
   const scores = {
     search: countMatches(text, PATTERNS.search),
     question: countMatches(text, PATTERNS.question),
@@ -91,29 +91,29 @@ function classifyTask(task = '') {
     command: countMatches(text, PATTERNS.command),
   };
 
-  // Classify by primary intent — check actionable intents first
+  // Classify by primary intent -- check actionable intents first
   if (matchesAny(text, PATTERNS.architecture)) {
     family = TASK_FAMILIES.ARCHITECTURE;
     complexity = 'high';
     confidence = 0.85;
-    reasons.push('architectural decision — needs deep reasoning');
+    reasons.push('architectural decision -- needs deep reasoning');
   } else if (scores.debug >= 1 && scores.edit >= 1) {
     family = TASK_FAMILIES.DEBUG;
     complexity = isComplex ? 'high' : isSimple ? 'low' : 'medium';
     confidence = 0.8;
-    reasons.push('debugging task — needs reasoning + code changes');
+    reasons.push('debugging task -- needs reasoning + code changes');
   } else if (scores.debug >= 1) {
     family = TASK_FAMILIES.DEBUG;
     complexity = isComplex ? 'high' : isSimple ? 'low' : 'medium';
     confidence = 0.7;
-    reasons.push('investigation/debug task — diagnostic reasoning');
+    reasons.push('investigation/debug task -- diagnostic reasoning');
   } else if (scores.edit >= 1 || scores.command >= 1) {
     // Edit/build/command tasks take priority over search when both match
     if (isComplex || scores.edit >= 2 || (scores.command >= 1 && isComplex)) {
       family = TASK_FAMILIES.MULTI_FILE;
       complexity = 'high';
       confidence = 0.75;
-      reasons.push('multi-file implementation — complex changes');
+      reasons.push('multi-file implementation -- complex changes');
     } else if (scores.command >= 1 && scores.edit === 0) {
       family = TASK_FAMILIES.COMMAND;
       complexity = matchesAny(text, ['deploy', 'migrate', 'production']) ? 'high' : 'low';
@@ -123,7 +123,7 @@ function classifyTask(task = '') {
       family = TASK_FAMILIES.CODE_EDIT;
       complexity = isSimple ? 'low' : 'medium';
       confidence = 0.7;
-      reasons.push('code edit — bounded changes');
+      reasons.push('code edit -- bounded changes');
     }
   } else if (scores.review >= 1) {
     family = TASK_FAMILIES.REVIEW;
@@ -139,26 +139,26 @@ function classifyTask(task = '') {
     family = TASK_FAMILIES.SEARCH_READ;
     complexity = isComplex ? 'medium' : 'low';
     confidence = 0.85;
-    reasons.push('discovery/search task — read-only');
+    reasons.push('discovery/search task -- read-only');
   } else if (scores.question >= 1) {
     family = TASK_FAMILIES.QUESTION;
     complexity = isComplex ? 'medium' : 'low';
     confidence = 0.8;
-    reasons.push('question — informational, no code changes');
+    reasons.push('question -- informational, no code changes');
   }
 
-  // Short prompts are usually simple — but only for read-only/question tasks
+  // Short prompts are usually simple -- but only for read-only/question tasks
   // "Fix the critical auth bypass" is 5 words but not low complexity
   const readOnlyFamilies = [TASK_FAMILIES.SEARCH_READ, TASK_FAMILIES.QUESTION, TASK_FAMILIES.COMMAND];
   if (words.length < 8 && complexity !== 'high' && readOnlyFamilies.includes(family)) {
     complexity = 'low';
-    if (!reasons.length) reasons.push('short prompt — likely simple task');
+    if (!reasons.length) reasons.push('short prompt -- likely simple task');
   }
 
   // Long prompts with lots of context are usually complex
   if (words.length > 50) {
     if (complexity === 'low') complexity = 'medium';
-    reasons.push('detailed prompt — increased complexity');
+    reasons.push('detailed prompt -- increased complexity');
   }
 
   return { family, complexity, confidence, reasons };
@@ -166,10 +166,10 @@ function classifyTask(task = '') {
 
 /**
  * Routing preference tiers.
- * preference 0-25:  "max savings" — push everything possible to haiku
- * preference 26-50: "cost-conscious" (default 35) — sonnet-heavy, opus only for architecture/multi-file
- * preference 51-75: "balanced" — opus for complex tasks
- * preference 76-100: "max quality" — opus for anything medium+
+ * preference 0-25:  "max savings" -- push everything possible to haiku
+ * preference 26-50: "cost-conscious" (default 35) -- sonnet-heavy, opus only for architecture/multi-file
+ * preference 51-75: "balanced" -- opus for complex tasks
+ * preference 76-100: "max quality" -- opus for anything medium+
  */
 
 /**
@@ -181,36 +181,36 @@ function getBaseRecommendation(family, complexity) {
     case TASK_FAMILIES.SEARCH_READ:
     case TASK_FAMILIES.QUESTION:
       if (complexity === 'high') return { model: 'sonnet', reason: 'complex search/question needs sonnet reasoning' };
-      return { model: 'haiku', reason: 'simple lookup — haiku is 15x cheaper than opus' };
+      return { model: 'haiku', reason: 'simple lookup -- haiku is 15x cheaper than opus' };
 
     case TASK_FAMILIES.REVIEW:
       if (complexity === 'high') return { model: 'opus', reason: 'comprehensive review needs opus depth' };
-      return { model: 'sonnet', reason: 'bounded review — sonnet handles well at 5x less cost' };
+      return { model: 'sonnet', reason: 'bounded review -- sonnet handles well at 5x less cost' };
 
     case TASK_FAMILIES.PLAN:
       if (complexity === 'high') return { model: 'opus', reason: 'complex planning needs opus architectural reasoning' };
-      return { model: 'sonnet', reason: 'straightforward planning — sonnet sufficient' };
+      return { model: 'sonnet', reason: 'straightforward planning -- sonnet sufficient' };
 
     case TASK_FAMILIES.ARCHITECTURE:
       return { model: 'opus', reason: 'architectural decisions require deepest reasoning' };
 
     case TASK_FAMILIES.CODE_EDIT:
-      return { model: 'sonnet', reason: 'code edit — sonnet at 5x less cost' };
+      return { model: 'sonnet', reason: 'code edit -- sonnet at 5x less cost' };
 
     case TASK_FAMILIES.MULTI_FILE:
       return { model: 'opus', reason: 'multi-file changes need opus for cross-file reasoning' };
 
     case TASK_FAMILIES.DEBUG:
-      if (complexity === 'low') return { model: 'sonnet', reason: 'simple bug — sonnet can handle' };
+      if (complexity === 'low') return { model: 'sonnet', reason: 'simple bug -- sonnet can handle' };
       if (complexity === 'medium') return { model: 'opus', reason: 'debugging needs opus reasoning to trace root cause' };
       return { model: 'opus', reason: 'complex debugging needs opus' };
 
     case TASK_FAMILIES.COMMAND:
       if (complexity === 'high') return { model: 'opus', reason: 'high-stakes command (deploy/migrate) needs opus care' };
-      return { model: 'sonnet', reason: 'routine command — sonnet sufficient' };
+      return { model: 'sonnet', reason: 'routine command -- sonnet sufficient' };
 
     default:
-      return { model: 'sonnet', reason: 'unknown task type — defaulting to sonnet (safe middle ground)' };
+      return { model: 'sonnet', reason: 'unknown task type -- defaulting to sonnet (safe middle ground)' };
   }
 }
 
@@ -226,13 +226,13 @@ function upgrade(model) {
   return idx < MODEL_ORDER.length - 1 ? MODEL_ORDER[idx + 1] : model;
 }
 
-// Families where opus is the floor — never downgrade below opus
+// Families where opus is the floor -- never downgrade below opus
 const OPUS_FLOOR = new Set([TASK_FAMILIES.ARCHITECTURE]);
 
 /**
  * Recommend the optimal model tier based on classification and user preference.
- * @param {object} classification — from classifyTask()
- * @param {object} opts — { preference?: number (0-100) }
+ * @param {object} classification -- from classifyTask()
+ * @param {object} opts -- { preference?: number (0-100) }
  */
 function recommendModel(classification, opts = {}) {
   const { family, complexity, customModel } = classification || {};
@@ -256,7 +256,7 @@ function recommendModel(classification, opts = {}) {
       fallbackChain: customModel === 'haiku' ? ['haiku', 'sonnet', 'opus']
         : customModel === 'sonnet' ? ['sonnet', 'opus']
         : ['opus'],
-      reasons: classification.reasons || [`[custom] model override → ${customModel}`],
+      reasons: classification.reasons || [`[custom] model override -> ${customModel}`],
       costMultiplier: customModel === 'haiku' ? 1 : customModel === 'sonnet' ? 3 : 15,
     };
   }
@@ -283,7 +283,7 @@ function recommendModel(classification, opts = {}) {
       const experimentModel = assignModel(exp);
       if (experimentModel) {
         model = experimentModel;
-        reasons.push(`[experiment] ${exp.id} (${exp.family}) — assigned ${experimentModel} (${exp.count + 1}/${exp.target})`);
+        reasons.push(`[experiment] ${exp.id} (${exp.family}) -- assigned ${experimentModel} (${exp.count + 1}/${exp.target})`);
         // Skip preference and learning adjustments when experiment is active
         return {
           model,
@@ -298,37 +298,37 @@ function recommendModel(classification, opts = {}) {
       }
     }
   } catch {
-    // Experiments module not available — skip
+    // Experiments module not available -- skip
   }
 
   // Apply preference adjustment
   if (preference <= 25 && !OPUS_FLOOR.has(family)) {
-    // Max savings: downgrade opus→sonnet, sonnet→haiku where safe
+    // Max savings: downgrade opus->sonnet, sonnet->haiku where safe
     if (model === 'opus') {
       model = 'sonnet';
-      reasons.push(`preference ${preference}/100 (max savings) — downgraded from opus`);
+      reasons.push(`preference ${preference}/100 (max savings) -- downgraded from opus`);
     } else if (model === 'sonnet' && complexity === 'low') {
       model = 'haiku';
-      reasons.push(`preference ${preference}/100 (max savings) — downgraded from sonnet`);
+      reasons.push(`preference ${preference}/100 (max savings) -- downgraded from sonnet`);
     }
   } else if (preference <= 50 && !OPUS_FLOOR.has(family)) {
-    // Cost-conscious (default): downgrade opus→sonnet for medium-complexity
+    // Cost-conscious (default): downgrade opus->sonnet for medium-complexity
     if (model === 'opus' && complexity !== 'high') {
       model = 'sonnet';
-      reasons.push(`preference ${preference}/100 (cost-conscious) — sonnet sufficient for medium ${family}`);
+      reasons.push(`preference ${preference}/100 (cost-conscious) -- sonnet sufficient for medium ${family}`);
     } else if (model === 'opus' && complexity === 'high' && family === TASK_FAMILIES.DEBUG) {
       // Even high-complexity debug can be sonnet at low preference
       model = 'sonnet';
-      reasons.push(`preference ${preference}/100 (cost-conscious) — trying sonnet for debug first`);
+      reasons.push(`preference ${preference}/100 (cost-conscious) -- trying sonnet for debug first`);
     }
   } else if (preference >= 76) {
-    // Max quality: upgrade sonnet→opus for medium+ complexity
+    // Max quality: upgrade sonnet->opus for medium+ complexity
     if (model === 'sonnet' && complexity !== 'low') {
       model = 'opus';
-      reasons.push(`preference ${preference}/100 (max quality) — upgraded to opus for ${complexity} ${family}`);
+      reasons.push(`preference ${preference}/100 (max quality) -- upgraded to opus for ${complexity} ${family}`);
     }
   }
-  // 51-75: balanced — use base recommendation as-is
+  // 51-75: balanced -- use base recommendation as-is
 
   // ── Adaptive learning: adjust based on historical success rates ──
   if (!OPUS_FLOOR.has(family)) {
@@ -344,10 +344,10 @@ function recommendModel(classification, opts = {}) {
           model = adj.downgradeTo;
           reasons.push(`[learned] ${adj.reason}`);
         }
-        // 'confirm' — no change, but we could log it
+        // 'confirm' -- no change, but we could log it
       }
     } catch {
-      // Learner not available — skip
+      // Learner not available -- skip
     }
   }
 

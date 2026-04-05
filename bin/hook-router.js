@@ -90,9 +90,9 @@ function handleUserPromptSubmit(input) {
   };
   const color = modelColors[recommendation.model] || '\x1b[38;5;245m';
 
-  const action = recommendation.model === 'haiku' ? '↓ redirect → haiku subagent'
-    : recommendation.model === 'sonnet' ? '↓ redirect → sonnet subagent'
-    : '● handle directly (opus)';
+  const action = recommendation.model === 'haiku' ? '> redirect to haiku subagent'
+    : recommendation.model === 'sonnet' ? '> redirect to sonnet subagent'
+    : '* handle directly (opus)';
 
   // Session cost tracking
   const sessionCost = events.getSessionCost(input.session_id);
@@ -112,7 +112,7 @@ function handleUserPromptSubmit(input) {
 
   // Session length warning (#37)
   if (promptCount >= 20 && promptCount % 5 === 0) {
-    warnings.push(`${warnColor}⚠ Session has ${promptCount} prompts (${costStr}). Consider /compact or starting fresh.${reset}`);
+    warnings.push(`${warnColor}! Session has ${promptCount} prompts (${costStr}). Consider /compact or starting fresh.${reset}`);
   }
 
   // Budget alert (#21)
@@ -120,16 +120,16 @@ function handleUserPromptSubmit(input) {
     const config = require(path.join(ROOT, 'src', 'config'));
     const cfg = config.read();
     if (cfg.daily_alert && totalCost >= cfg.daily_alert) {
-      warnings.push(`${warnColor}⚠ Daily spend ~$${totalCost.toFixed(2)} has reached your alert threshold ($${cfg.daily_alert}).${reset}`);
+      warnings.push(`${warnColor}! Daily spend ~$${totalCost.toFixed(2)} has reached your alert threshold ($${cfg.daily_alert}).${reset}`);
     }
     if (cfg.daily_cap && totalCost >= cfg.daily_cap) {
-      warnings.push(`${alertColor}⛔ Daily cap ($${cfg.daily_cap}) reached. Consider stopping or switching to cheaper models.${reset}`);
+      warnings.push(`${alertColor}!! Daily cap ($${cfg.daily_cap}) reached. Consider stopping or switching to cheaper models.${reset}`);
     }
   } catch {}
 
   // Vague/long prompt warning (#38)
   if (prompt.length > 500 && classification.family === 'unknown') {
-    warnings.push(`${warnColor}⚠ Long prompt (${prompt.length} chars) classified as unknown — vague prompts waste tokens. Be specific: file paths, line numbers, exact changes.${reset}`);
+    warnings.push(`${warnColor}! Long prompt (${prompt.length} chars) classified as unknown -- vague prompts waste tokens. Be specific: file paths, line numbers, exact changes.${reset}`);
   }
 
   // Check if learner adjusted the recommendation
@@ -137,14 +137,14 @@ function handleUserPromptSubmit(input) {
   const learnLine = learned ? `  ${gray}Learned:${reset} ${muted}${recommendation.reasons.filter(r => r.startsWith('[learned]')).map(r => r.replace('[learned] ', '')).join('; ')}${reset}` : null;
 
   const lines = [
-    `${gray}· · · · · · · · · · · · · · · · · · · ·${reset}`,
+    `${gray}- - - - - - - - - - - - - - - - - - - -${reset}`,
     `${amber}${bold}TOKEN COACH${reset}  ${gray}${classification.family} (${classification.complexity}, ${confidence} conf)${reset}`,
     `  ${gray}model:${reset}   ${color}${recommendation.model}${reset}  ${muted}${recommendation.reasons.filter(r => !r.startsWith('[learned]')).join('; ')}${reset}`,
     `  ${gray}action:${reset}  ${color}${action}${reset}`,
     ...(learnLine ? [learnLine] : []),
     `  ${gray}session:${reset} ${costColor}${costStr}${reset} ${gray}(${promptCount} prompts)${reset}`,
     ...warnings,
-    `${gray}· · · · · · · · · · · · · · · · · · · ·${reset}`,
+    `${gray}- - - - - - - - - - - - - - - - - - - -${reset}`,
   ];
   process.stderr.write(lines.join('\n') + '\n');
 
@@ -160,7 +160,7 @@ function handleUserPromptSubmit(input) {
   } else if (recommendation.model === 'sonnet') {
     ctx.push('ACTION: Dispatch this to a sonnet subagent unless it requires complex reasoning.');
   } else {
-    ctx.push('ACTION: Handle directly — this needs opus-level reasoning.');
+    ctx.push('ACTION: Handle directly -- this needs opus-level reasoning.');
   }
 
   return {
@@ -214,15 +214,15 @@ function handlePreToolUse(input) {
       opus:   '\x1b[38;5;180m',
     };
     const color = modelColors[modelTier] || '\x1b[38;5;245m';
-    const arrow = isOptimal ? '✓' : '⚠';
+    const arrow = isOptimal ? '+' : '!';
     const arrowColor = isOptimal ? '\x1b[38;5;107m' : '\x1b[38;5;136m';  // sage-green or amber
     const desc = description.slice(0, 50);
     const statusMsg = isOptimal
       ? `${arrowColor}${arrow}${reset} ${muted}optimal${reset}`
-      : `${arrowColor}${arrow}${reset} ${muted}used ${modelTier} — ${recommendation.model} would suffice${reset}`;
+      : `${arrowColor}${arrow}${reset} ${muted}used ${modelTier} -- ${recommendation.model} would suffice${reset}`;
 
     process.stderr.write(
-      `${gray}  ↳ subagent${reset} ${color}${modelTier}${reset} ${gray}${agentType}${reset} ${muted}"${desc}"${reset} ${statusMsg}\n`
+      `${gray}  -> subagent${reset} ${color}${modelTier}${reset} ${gray}${agentType}${reset} ${muted}"${desc}"${reset} ${statusMsg}\n`
     );
 
     // If model is more expensive than needed, add context (but don't block)

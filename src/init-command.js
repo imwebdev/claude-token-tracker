@@ -37,9 +37,9 @@ const green = '\x1b[32m';
 const yellow = '\x1b[33m';
 const red = '\x1b[31m';
 
-function ok(msg) { console.log(`  ${green}✓${reset} ${msg}`); }
-function warn(msg) { console.log(`  ${yellow}⚠${reset} ${msg}`); }
-function fail(msg) { console.log(`  ${red}✗${reset} ${msg}`); }
+function ok(msg) { console.log(`  ${green}[ok]${reset} ${msg}`); }
+function warn(msg) { console.log(`  ${yellow}[!!]${reset} ${msg}`); }
+function fail(msg) { console.log(`  ${red}[FAIL]${reset} ${msg}`); }
 function info(msg) { console.log(`  ${dim}${msg}${reset}`); }
 
 function checkClaude() {
@@ -108,7 +108,7 @@ function setupPm2(repoDir) {
   try {
     execSync('which pm2', { encoding: 'utf-8', stdio: 'pipe' });
   } catch {
-    warn('PM2 not installed — skipping dashboard auto-start');
+    warn('PM2 not installed -- skipping dashboard auto-start');
     info('Install PM2 globally: npm install -g pm2');
     info(`Then run: PORT=${port} pm2 start src/server.js --name claude-token-tracker`);
     return false;
@@ -149,7 +149,7 @@ function runDiagnostics() {
     ok('Claude CLI found');
     pass++;
   } else {
-    fail('Claude CLI not found — install from https://docs.anthropic.com/en/docs/claude-code');
+    fail('Claude CLI not found -- install from https://docs.anthropic.com/en/docs/claude-code');
   }
 
   // 2. Hooks installed
@@ -195,10 +195,10 @@ function runDiagnostics() {
       ok(`Dashboard running via PM2 (port ${port})`);
       pass++;
     } else {
-      warn(`Dashboard not running — start with: claude-tokens dashboard`);
+      warn('Dashboard not running -- start with: claude-tokens dashboard');
     }
   } catch {
-    warn('Dashboard not running — start with: claude-tokens dashboard');
+    warn('Dashboard not running -- start with: claude-tokens dashboard');
   }
 
   // 6. Router test
@@ -206,7 +206,7 @@ function runDiagnostics() {
   const c = classifyTask('search for all TODO comments in the codebase');
   const r = recommendModel(c);
   if (c.family === 'search_read' && r.model === 'haiku') {
-    ok('Router working: "search for TODOs" → haiku (correct)');
+    ok('Router working: "search for TODOs" -> haiku (correct)');
     pass++;
   } else {
     warn(`Router test: expected haiku, got ${r.model} (${c.family})`);
@@ -234,7 +234,7 @@ function printInit(args = []) {
     return;
   }
 
-  console.log(`\n  ${bold}Claude Token Tracker — Setup${reset}\n`);
+  console.log(`\n  ${bold}Claude Token Tracker -- Setup${reset}\n`);
 
   // Step 0: Parse --port flag and save to config early (before PM2 needs it)
   const portArg = parsePort(args);
@@ -246,7 +246,7 @@ function printInit(args = []) {
   if (checkClaude()) {
     ok('Claude CLI detected');
   } else {
-    warn('Claude CLI not found — hooks will be installed but won\'t fire until Claude is available');
+    warn('Claude CLI not found -- hooks will be installed but won\'t fire until Claude is available');
   }
 
   // Step 2: Create data directories
@@ -258,7 +258,7 @@ function printInit(args = []) {
   if (!fs.existsSync(config.configPath())) {
     config.set('routing_preference', cfg.routing_preference);
     ok(`Config created: ${config.configPath()}`);
-    info(`Routing preference: ${cfg.routing_preference}/100 (sonnet-heavy — saves money)`);
+    info(`Routing preference: ${cfg.routing_preference}/100 (sonnet-heavy -- saves money)`);
   } else {
     ok(`Config exists: ${config.configPath()}`);
     info(`Routing preference: ${cfg.routing_preference}/100`);
@@ -293,7 +293,7 @@ function printInit(args = []) {
   console.log(`  Dashboard: ${green}http://localhost:${port}${reset}`);
   console.log(`  Config:    ${dim}${config.configPath()}${reset}`);
   console.log(`  Data:      ${dim}${dataHome.getDataHome()}${reset}`);
-  console.log(`\n  ${yellow}⚠ Restart Claude Code${reset} (exit and relaunch) for hooks to take effect.`);
+  console.log(`\n  ${yellow}[!!] Restart Claude Code${reset} (exit and relaunch) for hooks to take effect.`);
   console.log(`  Run ${bold}claude-tokens doctor${reset} anytime to check health.\n`);
 }
 

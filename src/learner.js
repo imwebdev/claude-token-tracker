@@ -164,7 +164,7 @@ function getAdjustment(family, recommendedModel) {
         return {
           suggestion: 'upgrade',
           upgradeTo: upgrade,
-          reason: `${recommendedModel} only succeeds ${Math.round(rate * 100)}% for ${family} — ${upgrade} at ${Math.round(upgradeRate * 100)}% (${entry.samples} samples)`,
+          reason: `${recommendedModel} only succeeds ${Math.round(rate * 100)}% for ${family} -- ${upgrade} at ${Math.round(upgradeRate * 100)}% (${entry.samples} samples)`,
           confidence: rate,
           samples: entry.samples,
         };
@@ -184,7 +184,7 @@ function getAdjustment(family, recommendedModel) {
         return {
           suggestion: 'downgrade',
           downgradeTo: downgrade,
-          reason: `${recommendedModel} succeeds ${Math.round(rate * 100)}% for ${family} — ${downgrade} may suffice (${entry.samples} samples)`,
+          reason: `${recommendedModel} succeeds ${Math.round(rate * 100)}% for ${family} -- ${downgrade} may suffice (${entry.samples} samples)`,
           confidence: rate,
           samples: entry.samples,
         };
