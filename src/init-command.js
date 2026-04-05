@@ -24,9 +24,13 @@ const HOOK_EVENTS = [
   'SubagentStop',
 ];
 
+// Use the absolute path to the current node binary so hooks work even when
+// node is managed by nvm/fnm/volta (which aren't loaded in non-interactive shells).
+const NODE_EXE = process.execPath;
+
 const HOOK_ENTRY = {
   type: 'command',
-  command: `node ${HOOK_SCRIPT}`,
+  command: `${NODE_EXE} ${HOOK_SCRIPT}`,
   timeout: 10,
 };
 
@@ -79,12 +83,27 @@ function installHooks(settings) {
   if (!settings.hooks) settings.hooks = {};
   let installed = 0;
   let skipped = 0;
+  let updated = 0;
 
   for (const event of HOOK_EVENTS) {
     if (!settings.hooks[event]) settings.hooks[event] = [];
 
     if (hookAlreadyInstalled(settings.hooks[event])) {
-      skipped++;
+      // Update existing hook command to use current node path and script location
+      let didUpdate = false;
+      for (const group of settings.hooks[event]) {
+        for (const h of (group.hooks || [])) {
+          if (h.command && h.command.includes('hook-router.js') && h.command !== HOOK_ENTRY.command) {
+            h.command = HOOK_ENTRY.command;
+            didUpdate = true;
+          }
+        }
+      }
+      if (didUpdate) {
+        updated++;
+      } else {
+        skipped++;
+      }
       continue;
     }
 
@@ -95,7 +114,7 @@ function installHooks(settings) {
     installed++;
   }
 
-  return { installed, skipped };
+  return { installed, skipped, updated };
 }
 
 function getPort() {
@@ -269,12 +288,23 @@ function runDiagnostics() {
     pass++;
   } else if (hookCmd.includes('hook-router.js')) {
     fail('Hook path in settings.json points to WRONG location');
-    info('Expected: node ' + hookScript);
+    info('Expected: ' + NODE_EXE + ' ' + hookScript);
     info('Found:    ' + hookCmd);
     info('Fix: re-run "node bin/cli.js init" from this directory');
   } else {
     fail('No hook-router.js found in settings.json');
     info('Fix: run "node bin/cli.js init"');
+  }
+
+  // 10. Check for bare 'node' in hook command (nvm/fnm/volta issue)
+  total++;
+  if (hookCmd.startsWith('node ') && !hookCmd.startsWith('/')) {
+    fail('Hook uses bare "node" -- will fail if node is managed by nvm/fnm/volta');
+    info('Found: ' + hookCmd);
+    info('Fix: re-run "node bin/cli.js init" to use the absolute node path');
+  } else {
+    ok('Hook uses absolute node path');
+    pass++;
   }
 
   console.log(`\n  ${bold}${pass}/${total} checks passed${reset}\n`);
@@ -325,7 +355,7 @@ function verifyHookWorks(repoDir) {
     const hookCmd = settings.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command || '';
     if (hookCmd && !hookCmd.includes(hookScript)) {
       fail('settings.json hook path does not match repo location!');
-      info('Expected: node ' + hookScript);
+      info('Expected: ' + NODE_EXE + ' ' + hookScript);
       info('Found:    ' + hookCmd);
       info('Re-run init from the correct directory.');
     }
@@ -386,11 +416,12 @@ function printInit(args = []) {
 
   // Step 4: Install hooks
   const settings = readSettings();
-  const { installed, skipped } = installHooks(settings);
-  if (installed > 0) {
+  const { installed, skipped, updated } = installHooks(settings);
+  if (installed > 0 || updated > 0) {
     writeSettings(settings);
-    ok(`Installed ${installed} hooks into ${SETTINGS_PATH}`);
-    if (skipped > 0) info(`${skipped} hooks were already installed`);
+    if (installed > 0) ok(`Installed ${installed} hooks into ${SETTINGS_PATH}`);
+    if (updated > 0) ok(`Updated ${updated} hooks with current node path`);
+    if (skipped > 0) info(`${skipped} hooks were already up-to-date`);
   } else {
     ok(`All ${HOOK_EVENTS.length} hooks already installed`);
   }

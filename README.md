@@ -1,6 +1,26 @@
-# Claude Token Tracker
+<p align="center">
+  <img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="zero dependencies" />
+  <img src="https://img.shields.io/badge/node-%3E%3D18-blue" alt="node >= 18" />
+  <img src="https://img.shields.io/badge/license-MIT-orange" alt="MIT license" />
+  <img src="https://img.shields.io/badge/data-100%25%20local-purple" alt="100% local" />
+</p>
 
-Save money on Claude Code. It watches your prompts in real-time and routes each task to the cheapest model that can handle it — without you doing anything differently.
+<h1 align="center">Claude Token Tracker</h1>
+
+<p align="center">
+  <strong>Stop burning money on Claude Code.</strong><br/>
+  Watches your prompts in real-time and routes each task to the cheapest model that can handle it — without you doing anything differently.
+</p>
+
+<p align="center">
+  <code>opus for architecture</code> &middot; <code>sonnet for edits</code> &middot; <code>haiku for lookups</code>
+</p>
+
+---
+
+> **Disclaimer:** This is an independent community tool, not affiliated with Anthropic. Use at your own risk. There is no guarantee it will save you tokens or money — results depend on your usage patterns, prompt style, and how closely the router's classifications match your actual needs. Always review routing suggestions critically.
+
+---
 
 ## Install
 
@@ -10,11 +30,11 @@ cd claude-token-tracker
 node bin/cli.js init
 ```
 
-No `npm install` needed. Zero dependencies.
+No `npm install` needed. Zero dependencies. Seriously — zero.
 
 **Then restart Claude Code** (exit completely and relaunch). Hooks do not take effect until you restart.
 
-To verify everything is working:
+Verify everything is working:
 
 ```bash
 node bin/cli.js doctor
@@ -24,29 +44,66 @@ All checks should pass. If any fail, the output tells you exactly what to fix.
 
 ---
 
-## 100% local. Works offline. No data leaves your machine.
+## What you will see
 
-- Runs entirely on your computer — no cloud, no account, no API key required
-- Works offline after install — no internet connection needed
-- Zero telemetry — no analytics, no usage reporting, no phone home
-- Your prompts and usage data stay on your machine in `~/.token-coach/`
+After install, a small routing box appears in your terminal every time you send a prompt:
+
+```
+- - - - - - - - - - - - - - - - - - - -
+TOKEN COACH  search_read (low, high conf)
+  model:   haiku  simple lookup -- haiku is 15x cheaper than opus
+  action:  > redirect to haiku subagent
+  session: ~$0.45 (12 prompts)
+- - - - - - - - - - - - - - - - - - - -
+```
+
+That is it. You do not need to learn any commands. Just use Claude Code as you always have, and Token Tracker quietly nudges the model selection in the background.
 
 ---
 
-## What you will see after install
-
-When you use Claude Code normally, you will see a small routing box appear in your terminal:
+## How it works
 
 ```
----------------------------------------
-TOKEN COACH  search_read (low, high conf)
-  Model: HAIKU  simple lookup -- haiku is 15x cheaper than opus
-  Action: REDIRECT to haiku subagent
-  Session: ~$0.45 (12 prompts)
----------------------------------------
+  You type a prompt
+        |
+        v
+  +------------------+
+  |  Hook intercepts  |  <-- runs in <50ms, you won't notice
+  +------------------+
+        |
+        v
+  +------------------+
+  | Classify task     |  search? edit? debug? architecture?
+  +------------------+
+        |
+        v
+  +------------------+
+  | Recommend model   |  haiku ($1) / sonnet ($3) / opus ($15)
+  +------------------+
+        |
+        v
+  +------------------+
+  | Show routing box  |  the thing you see in terminal
+  +------------------+
+        |
+        v
+  Claude Code continues normally
+  (with routing hint injected)
 ```
 
-That is it. That is the whole thing. You do not need to learn any commands. Just use Claude Code as you always have, and Token Tracker quietly suggests the cheapest model in the background.
+The router uses keyword pattern matching to classify prompts into families (search, edit, debug, review, plan, architecture) and recommends the cheapest model for each. It learns from your usage over time.
+
+---
+
+## 100% local. Works offline. No data leaves your machine.
+
+| | |
+|---|---|
+| **No cloud** | Runs entirely on your computer |
+| **No account** | No API key, no sign-up, nothing |
+| **No telemetry** | Zero analytics, zero phone-home |
+| **Offline** | Works without internet after install |
+| **Your data** | Stays in `~/.token-coach/` on your machine |
 
 ---
 
@@ -65,7 +122,7 @@ cd claude-token-tracker
 node bin/cli.js uninstall
 ```
 
-This removes hooks from Claude Code, stops the dashboard, and removes global commands. It will ask before deleting your data.
+Removes hooks from Claude Code, stops the dashboard, and removes global commands. It will ask before deleting your data.
 
 Then restart Claude Code (exit and relaunch).
 
@@ -75,25 +132,35 @@ To also delete the repo folder afterward: `rm -rf claude-token-tracker`
 
 ## FAQ
 
-**Does this slow down Claude Code?**
+<details>
+<summary><strong>Does this slow down Claude Code?</strong></summary>
+<br/>
+No. The hooks run in under 50ms. You will not notice any delay.
+</details>
 
-No. The hooks run in under 100ms. You will not notice any delay.
-
-**Does this change how Claude Code works?**
-
+<details>
+<summary><strong>Does this change how Claude Code works?</strong></summary>
+<br/>
 No. Token Tracker only adds routing suggestions. It does not block anything, modify responses, or intercept your conversations. Claude Code behaves exactly the same — you just see the routing box in your terminal.
+</details>
 
-**Can I turn it off temporarily without uninstalling?**
+<details>
+<summary><strong>Can I turn it off temporarily?</strong></summary>
+<br/>
+Yes. Open <code>~/.claude/settings.json</code> and remove the hooks entries. Run <code>node bin/cli.js init</code> at any time to re-install them.
+</details>
 
-Yes. Open `~/.claude/settings.json` and remove or comment out the hooks entries. Remove the hooks and Token Tracker goes silent. Add them back to turn it on again. Run `node bin/cli.js init` at any time to re-install the hooks.
+<details>
+<summary><strong>Where is my data stored?</strong></summary>
+<br/>
+Everything is in <code>~/.token-coach/</code> on your machine. Change the location with the <code>TOKEN_COACH_HOME</code> environment variable.
+</details>
 
-**Where is my data stored?**
-
-Everything is in `~/.token-coach/` on your machine. You can change this location with the `TOKEN_COACH_HOME` environment variable.
-
-**Does this work with Claude Code for teams or enterprise?**
-
-Yes. It is installed per-machine. It does not interact with Anthropic's servers or your team's Claude Code configuration. Each developer installs it independently on their own computer.
+<details>
+<summary><strong>Does this work with Claude Code for teams?</strong></summary>
+<br/>
+Yes. Installed per-machine. Does not interact with Anthropic's servers or your team's configuration.
+</details>
 
 ---
 
@@ -102,7 +169,7 @@ Yes. It is installed per-machine. It does not interact with Anthropic's servers 
 Everything below is optional. You do not need any of this to use Token Tracker.
 
 <details>
-<summary>Commands, configuration, dashboard, and more</summary>
+<summary><strong>Commands, configuration, dashboard, and more</strong></summary>
 
 ### CLI commands
 
@@ -171,13 +238,9 @@ node bin/cli.js config routing_preference 35
 | 51-75 | Balanced | Opus for complex debug, review, and planning tasks. |
 | 76-100 | Max quality | Opus for anything medium complexity or higher. |
 
-At the default setting of 35, the router produces roughly 57% sonnet, 14% haiku, and 29% opus across a typical workload.
-
 ---
 
 ### Budget alerts
-
-Set spending thresholds to avoid surprises:
 
 ```bash
 node bin/cli.js config daily_alert 5    # Yellow warning at $5/day
@@ -189,8 +252,6 @@ Alerts appear in the routing box on every prompt once a threshold is reached.
 ---
 
 ### How tasks are classified
-
-The router classifies prompts using keyword pattern matching:
 
 | Family | Example prompts | Default model |
 |--------|----------------|---------------|
@@ -204,15 +265,11 @@ The router classifies prompts using keyword pattern matching:
 | `multi_file` | "refactor across all files", "rewrite the auth system" | opus |
 | `architecture` | "design the system architecture", "database schema" | opus |
 
-Complexity modifiers (words like "entire", "comprehensive", "all files") bump the complexity level up, which can escalate to a more capable model.
-
 ---
 
 ### Adaptive learning
 
-The router learns from your usage over time. It tracks success rates per task family and model, then adjusts recommendations. Architecture tasks never drop below opus regardless of learned data.
-
-View what it has learned:
+The router learns from your usage over time. Tracks success rates per task family and model, then adjusts recommendations.
 
 ```bash
 node bin/cli.js learn
@@ -222,7 +279,7 @@ node bin/cli.js learn
 
 ### Web dashboard
 
-A local dashboard (default `http://localhost:6099`, configurable via `--port` or `config dashboard_port`) shows:
+A local dashboard (default `http://localhost:6099`) shows:
 
 - Today's task count by model, delegation rate, and estimated cost
 - Every classified prompt with model, family, project, and status
@@ -232,22 +289,16 @@ A local dashboard (default `http://localhost:6099`, configurable via `--port` or
 - Tool and agent token consumption
 - Hourly activity heatmap
 
-Start it manually:
-
 ```bash
-node bin/cli.js dashboard
-node bin/cli.js dashboard --port 8080   # override port for this session
+node bin/cli.js dashboard                # start on default port
+node bin/cli.js dashboard --port 8080    # override port
 ```
 
-Or run it persistently with PM2 (survives terminal close and reboots):
+Or run persistently with PM2:
 
 ```bash
 pm2 start src/server.js --name claude-token-tracker
 ```
-
-The port is read from config (`dashboard_port`), then the `PORT` env var, then defaults to 6099.
-
-The dashboard auto-refreshes every 30 seconds.
 
 ---
 
@@ -255,28 +306,18 @@ The dashboard auto-refreshes every 30 seconds.
 
 The routing box also warns about:
 
-- Long sessions (20+ prompts) -- suggests `/compact` or starting fresh
-- Budget thresholds -- when daily spend reaches your alert or cap
-- Vague prompts -- flags very long prompts classified as "unknown" (these tend to waste tokens)
-- Suboptimal dispatches -- when a subagent uses a more expensive model than recommended
+- Long sessions (20+ prompts) — suggests `/compact` or starting fresh
+- Budget thresholds — when daily spend reaches your alert or cap
+- Vague prompts — flags long prompts classified as "unknown"
+- Suboptimal dispatches — when a subagent uses a more expensive model than needed
 
 ---
 
 ### What is logged
 
-Token Tracker records the following per prompt:
+Token Tracker records per prompt: task classification, model recommendation, first 200 chars of prompt (for analytics), subagent dispatches, tool call names.
 
-- Task classification and model recommendation
-- First 200 characters of each prompt (for routing analytics only)
-- Subagent dispatch decisions
-- Tool call names (not their inputs or outputs)
-- Session IDs and timestamps
-
-It does NOT record:
-- Full prompt text
-- File contents or code
-- API keys or credentials
-- Tool input/output payloads
+It does **NOT** record: full prompt text, file contents, API keys, or tool input/output payloads.
 
 ---
 
@@ -290,22 +331,17 @@ src/
   router.js             Task classification and model recommendation
   learner.js            Adaptive learning from historical data
   config.js             User configuration (preference, alerts)
-  init-command.js       Setup wizard and health check
+  init-command.js        Setup wizard and health check
   run-command.js        Task execution with file snapshots
   validator.js          Execution result validation
-  escalation.js         Fallback chain (haiku to sonnet to opus)
+  escalation.js         Fallback chain (haiku -> sonnet -> opus)
   events.js             Event logging, session costs, token tracking
   ledger.js             Run persistence to ~/.token-coach/
   parser.js             Reads Claude Code data from ~/.claude/
   calculator.js         Token cost math (Anthropic pricing)
   insights.js           Actionable recommendations
-  benchmarks.js         Run data aggregation
-  waste.js              Over-routing detection
   server.js             Dashboard HTTP server
-  storage.js            JSON/JSONL file helpers
   data-home.js          Path resolution for ~/.token-coach/
-  audit-command.js      CLI audit output
-  benchmark-command.js  CLI benchmark output
 public/
   index.html            Dashboard UI (single file, zero dependencies)
 ```
