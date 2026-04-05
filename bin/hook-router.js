@@ -176,9 +176,13 @@ function handleUserPromptSubmit(input) {
     ctx.push('ACTION: Handle directly -- this needs opus-level reasoning.');
   }
 
-  // Display instruction — ensures the banner is visible even without a
-  // project CLAUDE.md that tells Claude to echo routing info.
-  ctx.push('DISPLAY: At the very start of your response, on its own line, print a one-line routing summary in this exact format: > **[token-tracker]** MODEL task_family (complexity) -- action. Example: > **[token-tracker]** HAIKU search_read (low) -- dispatching to haiku subagent. This line is mandatory.');
+  // Build the exact banner line so Claude copies it verbatim instead of
+  // hallucinating values.  The DISPLAY instruction must be unambiguous.
+  const actionShort = recommendation.model === 'haiku' ? 'dispatching to haiku subagent'
+    : recommendation.model === 'sonnet' ? 'dispatching to sonnet subagent'
+    : 'handling directly (opus)';
+  const bannerLine = `> **[token-tracker]** ${recommendation.model.toUpperCase()} ${classification.family} (${classification.complexity}) -- ${actionShort}`;
+  ctx.push(`DISPLAY: You MUST print the following line verbatim as the very first line of your response. Do NOT modify it, do NOT invent different values: ${bannerLine}`);
 
   return {
     hookSpecificOutput: {
