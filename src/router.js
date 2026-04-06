@@ -147,9 +147,9 @@ function classifyTask(task = '') {
     reasons.push('question -- informational, no code changes');
   }
 
-  // Short prompts are usually simple -- but only for read-only/question tasks
+  // Short prompts are usually simple -- but only for read-only/question/unknown tasks
   // "Fix the critical auth bypass" is 5 words but not low complexity
-  const readOnlyFamilies = [TASK_FAMILIES.SEARCH_READ, TASK_FAMILIES.QUESTION, TASK_FAMILIES.COMMAND];
+  const readOnlyFamilies = [TASK_FAMILIES.SEARCH_READ, TASK_FAMILIES.QUESTION, TASK_FAMILIES.COMMAND, TASK_FAMILIES.UNKNOWN];
   if (words.length < 8 && complexity !== 'high' && readOnlyFamilies.includes(family)) {
     complexity = 'low';
     if (!reasons.length) reasons.push('short prompt -- likely simple task');
@@ -310,7 +310,7 @@ function recommendModel(classification, opts = {}) {
       model = 'opus';
     }
   } else if (floor === 'haiku') {
-    // Haiku-first: aggressively downgrade unless task genuinely needs more
+    // Haiku-first: start on haiku, only upgrade when task genuinely needs more
     if (!OPUS_FLOOR.has(family)) {
       if (model === 'opus' && complexity !== 'high') {
         model = 'sonnet';
@@ -324,7 +324,18 @@ function recommendModel(classification, opts = {}) {
         model = 'haiku';
         reasons.push('floor=haiku -- downgraded to haiku (low complexity)');
       }
-      // Medium-complexity sonnet tasks stay on sonnet even with haiku floor
+      // Unknown family: we have no reason to pay for sonnet when we can't classify the task
+      if (model === 'sonnet' && family === TASK_FAMILIES.UNKNOWN) {
+        model = 'haiku';
+        reasons.push('floor=haiku -- unclassified task, defaulting to haiku');
+      }
+      // Medium sonnet tasks that are code edits/reviews/plans stay on sonnet — they need it
+      // Everything else at medium goes to haiku
+      const keepSonnet = new Set([TASK_FAMILIES.CODE_EDIT, TASK_FAMILIES.REVIEW, TASK_FAMILIES.PLAN, TASK_FAMILIES.MULTI_FILE, TASK_FAMILIES.DEBUG]);
+      if (model === 'sonnet' && complexity === 'medium' && !keepSonnet.has(family)) {
+        model = 'haiku';
+        reasons.push(`floor=haiku -- ${family} at medium complexity, haiku sufficient`);
+      }
     }
   } else {
     // Sonnet-first (default): downgrade opus for non-high-complexity
