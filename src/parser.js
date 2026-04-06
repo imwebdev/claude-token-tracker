@@ -138,7 +138,7 @@ function getProjects(history) {
 }
 
 /** Detect enabled MCP servers from settings */
-function getMcpServers(globalSettings, projectSettings) {
+function getMcpServers(globalSettings, projectSettings, projectPath) {
   const servers = new Set();
   const disabled = new Set();
 
@@ -146,6 +146,7 @@ function getMcpServers(globalSettings, projectSettings) {
     projectSettings.disabledMcpServers.forEach(s => disabled.add(s));
   }
 
+  // Read from ~/.claude/config.json (legacy location)
   const configPath = path.join(CLAUDE_DIR, 'config.json');
   if (fs.existsSync(configPath)) {
     try {
@@ -156,6 +157,36 @@ function getMcpServers(globalSettings, projectSettings) {
         });
       }
     } catch {}
+  }
+
+  // Read from ~/.mcp.json (global MCP config, newer format)
+  const globalMcpPath = path.join(os.homedir(), '.mcp.json');
+  if (fs.existsSync(globalMcpPath)) {
+    try {
+      const mcpConfig = JSON.parse(fs.readFileSync(globalMcpPath, 'utf-8'));
+      const mcpServers = mcpConfig.mcpServers || mcpConfig;
+      if (typeof mcpServers === 'object') {
+        Object.keys(mcpServers).forEach(s => {
+          if (!disabled.has(s)) servers.add(s);
+        });
+      }
+    } catch {}
+  }
+
+  // Read from <project>/.mcp.json (per-project MCP config)
+  if (projectPath) {
+    const projectMcpPath = path.join(projectPath, '.mcp.json');
+    if (fs.existsSync(projectMcpPath)) {
+      try {
+        const mcpConfig = JSON.parse(fs.readFileSync(projectMcpPath, 'utf-8'));
+        const mcpServers = mcpConfig.mcpServers || mcpConfig;
+        if (typeof mcpServers === 'object') {
+          Object.keys(mcpServers).forEach(s => {
+            if (!disabled.has(s)) servers.add(s);
+          });
+        }
+      } catch {}
+    }
   }
 
   return { enabled: [...servers], disabled: [...disabled] };
@@ -311,6 +342,8 @@ function readSessionTokenUsage(dateStr) {
   const byModel = {};
   const bySession = {};
   let totalCost = 0;
+  let latestTimestamp = '';
+  let latestSessionId = null;
 
   // Pricing per million tokens
   const pricing = {
@@ -422,6 +455,12 @@ function readSessionTokenUsage(dateStr) {
       byModel[tier].cost += cost;
       totalCost += cost;
 
+      // Track most recent session
+      if (msg.timestamp && msg.timestamp > latestTimestamp) {
+        latestTimestamp = msg.timestamp;
+        latestSessionId = sf.sessionId;
+      }
+
       // Aggregate by session
       const sid = sf.sessionId;
       if (!bySession[sid]) bySession[sid] = { cost: 0, calls: 0, models: {}, project: sf.project };
@@ -431,7 +470,14 @@ function readSessionTokenUsage(dateStr) {
     }
   }
 
-  return { byModel, bySession, totalCost };
+  // Determine the dominant model of the most recent session
+  let latestSessionModel = null;
+  if (latestSessionId && bySession[latestSessionId]) {
+    const models = bySession[latestSessionId].models;
+    latestSessionModel = Object.entries(models).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  }
+
+  return { byModel, bySession, totalCost, latestSessionModel };
 }
 
 module.exports = {

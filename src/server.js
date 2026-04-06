@@ -109,7 +109,7 @@ function buildDashboardData() {
   const mcpServers = {};
   for (const [name, info] of Object.entries(projects)) {
     const projectSettings = parser.readProjectSettings(info.path);
-    const servers = parser.getMcpServers(globalSettings, projectSettings);
+    const servers = parser.getMcpServers(globalSettings, projectSettings, info.path);
     mcpServers[name] = { ...servers, projectPath: info.path };
   }
 

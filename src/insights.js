@@ -239,22 +239,44 @@ function generateInsights(data) {
 
   // ─── MCP Server Analysis (#52) ────────────────────────────
   if (mcpServers) {
-    for (const [projectName, serverInfo] of Object.entries(mcpServers)) {
-      const { enabled, disabled, projectPath } = serverInfo;
-      if (enabled.length === 0) continue;
-      // ~800 tokens overhead per server per message (tool definitions in system prompt)
-      const tokenOverheadPerMsg = enabled.length * 800;
-      const msgs = stats?.totalMessages || 0;
+    // Find the common (global) servers shared across all projects
+    const allProjects = Object.entries(mcpServers).filter(([, info]) => info.enabled.length > 0);
+    const globalServers = allProjects.length > 0
+      ? allProjects.reduce((common, [, info]) => common.filter(s => info.enabled.includes(s)), allProjects[0]?.[1]?.enabled || [])
+      : [];
+
+    // Show one aggregated insight for global MCP servers
+    if (globalServers.length > 0) {
+      const tokenOverheadPerMsg = globalServers.length * 800;
       const msgsToday = (stats?.dailyActivity || []).slice(-1)[0]?.messageCount || 0;
-      const opusPrice = 15 / 1_000_000; // input cost per token
+      const opusPrice = 15 / 1_000_000;
+      const dailyCostEst = msgsToday * tokenOverheadPerMsg * opusPrice;
+      const severity = globalServers.length >= 5 ? 'critical' : globalServers.length >= 3 ? 'warning' : 'info';
+      insights.push({
+        _live: true,
+        severity,
+        title: `${globalServers.length} global MCP server${globalServers.length > 1 ? 's' : ''} active in all ${allProjects.length} projects — ~${(tokenOverheadPerMsg / 1000).toFixed(1)}K tokens/msg`,
+        detail: `Global servers: ${globalServers.join(', ')}. These are included in every message across all projects${dailyCostEst > 0.01 ? ` — estimated $${dailyCostEst.toFixed(2)}/day overhead` : ''}.`,
+        action: 'Disable unused global servers in ~/.mcp.json. Only keep servers you use across all projects.',
+      });
+    }
+
+    // Show per-project insights only for projects with EXTRA servers beyond global
+    for (const [projectName, serverInfo] of allProjects) {
+      const { enabled, disabled, projectPath } = serverInfo;
+      const extraServers = enabled.filter(s => !globalServers.includes(s));
+      if (extraServers.length === 0) continue;
+      const tokenOverheadPerMsg = extraServers.length * 800;
+      const msgsToday = (stats?.dailyActivity || []).slice(-1)[0]?.messageCount || 0;
+      const opusPrice = 15 / 1_000_000;
       const dailyCostEst = msgsToday * tokenOverheadPerMsg * opusPrice;
       const severity = enabled.length >= 5 ? 'critical' : enabled.length >= 3 ? 'warning' : 'info';
       insights.push({
         _live: true,
         severity,
-        title: `${projectName}: ${enabled.length} MCP server${enabled.length > 1 ? 's' : ''} active — ~${(tokenOverheadPerMsg / 1000).toFixed(1)}K tokens per message`,
-        detail: `Active: ${enabled.join(', ')}. Every message you send includes all MCP server tool definitions in the system prompt${dailyCostEst > 0.01 ? ` — estimated $${dailyCostEst.toFixed(2)}/day overhead` : ''}. Disabled: ${disabled.length > 0 ? disabled.join(', ') : 'none'}.`,
-        action: `Disable unused servers in ${projectPath}/.claude/settings.json → disabledMcpServers. Only keep servers this project actually uses.`,
+        title: `${projectName}: ${extraServers.length} extra MCP server${extraServers.length > 1 ? 's' : ''} — ~${(tokenOverheadPerMsg / 1000).toFixed(1)}K extra tokens/msg`,
+        detail: `Project-specific servers: ${extraServers.join(', ')} (plus ${globalServers.length} global). Total: ${enabled.length} servers${dailyCostEst > 0.01 ? ` — extra $${dailyCostEst.toFixed(2)}/day overhead` : ''}. Disabled: ${disabled.length > 0 ? disabled.join(', ') : 'none'}.`,
+        action: `Disable unused servers in ${projectPath}/.claude/settings.json → disabledMcpServers.`,
       });
     }
   }
