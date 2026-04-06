@@ -147,6 +147,31 @@
   @media (max-width: 860px) { .g2 { grid-template-columns: 1fr; height: auto !important; } }
   @media (max-width: 640px) { .g2-eq { grid-template-columns: 1fr; } }
 
+  /* ─── Savings card ───────────────────────── */
+  .savings-hero {
+    display: flex; gap: 24px; align-items: baseline; margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .savings-big {
+    font-family: var(--mono); font-size: 28px; font-weight: 700;
+    color: #16a34a; font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  }
+  [data-theme="dark"] .savings-big { color: #4ade80; }
+  .savings-sub { font-size: 12px; color: var(--dim); }
+  .savings-sub strong { color: var(--muted); font-weight: 600; }
+  .savings-chart { width: 100%; height: 120px; }
+  .savings-legend {
+    display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: var(--dim);
+  }
+  .savings-legend span::before {
+    content: ''; display: inline-block; width: 10px; height: 3px;
+    border-radius: 2px; margin-right: 4px; vertical-align: 2px;
+  }
+  .savings-legend .leg-actual::before { background: var(--accent); }
+  .savings-legend .leg-counter::before { background: var(--dim); opacity: 0.4; }
+  .savings-legend .leg-saved::before { background: #16a34a; opacity: 0.3; }
+  [data-theme="dark"] .savings-legend .leg-saved::before { background: #4ade80; }
+
   /* ─── Model floor selector ────────────────── */
   .floor-row {
     display: flex; gap: 8px; align-items: stretch;
@@ -410,6 +435,14 @@ function buildHTML() {
 
     <div class="card anim d1" style="margin-bottom:12px">
       <div class="card-hd">
+        <h2>Did routing pay for itself?</h2>
+        <span class="ct" id="v-savings-pct">${D.savings?.today?.savingsPercent > 0 ? Math.round(D.savings.today.savingsPercent) + '% saved' : 'no savings yet'}</span>
+      </div>
+      <div id="v-savings-body">${renderSavings(D.savings)}</div>
+    </div>
+
+    <div class="card anim d1" style="margin-bottom:12px">
+      <div class="card-hd">
         <h2>Model floor</h2>
         <span class="ct" id="v-floor-label">${D.config?.model_floor || 'sonnet'}</span>
       </div>
@@ -509,6 +542,84 @@ function render() {
 }
 
 /* ─── Renderers ─────────────────────────────── */
+
+function renderSavings(savings) {
+  if (!savings) return '<div class="empty">No savings data yet.</div>';
+  const t = savings.today || {};
+  const daily = savings.daily || [];
+
+  // Cumulative savings
+  const cumSavings = daily.reduce((sum, d) => sum + (d.savings || 0), 0) + (t.savings || 0);
+  const todaySavings = t.savings || 0;
+
+  let html = `<div class="savings-hero">
+    <div>
+      <div class="savings-big">$${cumSavings.toFixed(2)}</div>
+      <div class="savings-sub">total saved vs all-opus</div>
+    </div>
+    <div>
+      <div class="savings-sub"><strong>$${todaySavings.toFixed(2)}</strong> saved today</div>
+      <div class="savings-sub"><strong>$${(t.actual || 0).toFixed(2)}</strong> actual &middot; <strong>$${(t.counterfactual || 0).toFixed(2)}</strong> if all opus</div>
+    </div>
+  </div>`;
+
+  // Build SVG chart — last 14 days + today
+  const chartData = [...daily];
+  const todayStr = new Date().toISOString().slice(0, 10);
+  // Add today if not already in daily
+  if (!chartData.length || chartData[chartData.length - 1].date !== todayStr) {
+    chartData.push({ date: todayStr, actual: Math.round((t.actual || 0) * 100) / 100, counterfactual: Math.round((t.counterfactual || 0) * 100) / 100, savings: Math.round(todaySavings * 100) / 100 });
+  }
+
+  if (chartData.length < 2) {
+    html += '<div class="savings-sub" style="margin-top:8px">Need at least 2 days of data for the chart.</div>';
+    return html;
+  }
+
+  const W = 600, H = 120, PAD = 28;
+  const maxVal = Math.max(...chartData.map(d => Math.max(d.actual, d.counterfactual)), 1);
+  const xStep = (W - PAD * 2) / (chartData.length - 1);
+
+  function y(val) { return H - PAD - ((val / maxVal) * (H - PAD * 2)); }
+
+  const actualPoints = chartData.map((d, i) => `${PAD + i * xStep},${y(d.actual)}`);
+  const counterPoints = chartData.map((d, i) => `${PAD + i * xStep},${y(d.counterfactual)}`);
+
+  // Shaded savings area (between the two lines)
+  const areaPath = `M${counterPoints[0]} ${counterPoints.map(p => `L${p}`).join(' ')} L${PAD + (chartData.length - 1) * xStep},${y(chartData[chartData.length - 1].actual)} ${[...actualPoints].reverse().map(p => `L${p}`).join(' ')} Z`;
+
+  // X-axis labels (show every few days)
+  const labelInterval = chartData.length <= 7 ? 1 : chartData.length <= 14 ? 2 : 3;
+  const xLabels = chartData.map((d, i) => {
+    if (i % labelInterval !== 0 && i !== chartData.length - 1) return '';
+    const label = d.date.slice(5); // MM-DD
+    return `<text x="${PAD + i * xStep}" y="${H - 4}" text-anchor="middle" fill="currentColor" opacity="0.4" font-size="9" font-family="var(--mono)">${label}</text>`;
+  }).join('');
+
+  // Y-axis: just max value
+  const yLabel = `<text x="${PAD - 4}" y="${PAD}" text-anchor="end" fill="currentColor" opacity="0.4" font-size="9" font-family="var(--mono)">$${maxVal.toFixed(0)}</text>`;
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const savedFill = isDark ? 'rgba(74, 222, 128, 0.12)' : 'rgba(22, 163, 74, 0.1)';
+  const accentStroke = isDark ? '#d4a843' : '#6d5000';
+  const dimStroke = isDark ? 'rgba(163,163,163,0.3)' : 'rgba(82,82,82,0.25)';
+
+  html += `<svg class="savings-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Savings chart: actual vs counterfactual cost over ${chartData.length} days">
+    <path d="${areaPath}" fill="${savedFill}" />
+    <polyline points="${counterPoints.join(' ')}" fill="none" stroke="${dimStroke}" stroke-width="1.5" stroke-dasharray="4,3" />
+    <polyline points="${actualPoints.join(' ')}" fill="none" stroke="${accentStroke}" stroke-width="2" />
+    ${xLabels}
+    ${yLabel}
+  </svg>`;
+
+  html += `<div class="savings-legend">
+    <span class="leg-actual">actual spend</span>
+    <span class="leg-counter">if all opus</span>
+    <span class="leg-saved">savings</span>
+  </div>`;
+
+  return html;
+}
 
 function renderFloorSelector(current) {
   const floors = [

@@ -153,6 +153,77 @@ function estimateSessionCost(messageCount, model = 'opus') {
   return ((inputTokens / m) * price.input) + ((outputTokens / m) * price.output);
 }
 
+/**
+ * Calculate counterfactual cost: what would it have cost if everything ran on opus?
+ * @param {object} byModel — { opus: { input, output, cacheRead, cacheWrite, cost }, sonnet: ..., haiku: ... }
+ *   Token counts per model tier (from readSessionTokenUsage().byModel)
+ */
+function calculateCounterfactual(byModel) {
+  if (!byModel) return { actual: 0, counterfactual: 0, savings: 0, savingsPercent: 0 };
+
+  const opusPrice = getModelPrice('opus');
+  const m = 1_000_000;
+  let actual = 0;
+  let counterfactual = 0;
+
+  for (const [tier, data] of Object.entries(byModel)) {
+    actual += data.cost || 0;
+    // Reprice all tokens at opus rates
+    const inp = data.input || 0;
+    const out = data.output || 0;
+    const cr = data.cacheRead || 0;
+    const cw = data.cacheWrite || 0;
+    counterfactual += (inp / m * opusPrice.input) +
+      (out / m * opusPrice.output) +
+      (cr / m * opusPrice.cacheRead) +
+      (cw / m * opusPrice.cacheWrite);
+  }
+
+  return {
+    actual,
+    counterfactual,
+    savings: counterfactual - actual,
+    savingsPercent: counterfactual > 0 ? ((counterfactual - actual) / counterfactual * 100) : 0,
+  };
+}
+
+/**
+ * Estimate daily actual vs counterfactual from dailyModelTokens (stats-cache).
+ * Uses a blended cost-per-token since we don't have input/output split per day.
+ * @param {Array} dailyModelTokens — [{ date, tokensByModel: { "claude-opus-4-6": N, ... } }]
+ * @param {number} days — number of days to return
+ */
+function calculateDailySavings(dailyModelTokens, days = 14) {
+  if (!dailyModelTokens?.length) return [];
+
+  // Blended cost-per-token for each tier (weighted average of input+output+cache pricing)
+  // Based on typical ratios: ~60% cache-read, ~30% input, ~8% output, ~2% cache-write
+  function blendedRate(modelId) {
+    const p = getModelPrice(modelId);
+    return (p.input * 0.30 + p.output * 0.08 + p.cacheRead * 0.60 + p.cacheWrite * 0.02);
+  }
+  const opusBlended = blendedRate('opus');
+
+  return dailyModelTokens.slice(-days).map(d => {
+    let actual = 0;
+    let counterfactual = 0;
+    const m = 1_000_000;
+
+    for (const [modelId, tokens] of Object.entries(d.tokensByModel || {})) {
+      const rate = blendedRate(modelId);
+      actual += (tokens / m) * rate;
+      counterfactual += (tokens / m) * opusBlended;
+    }
+
+    return {
+      date: d.date,
+      actual: Math.round(actual * 100) / 100,
+      counterfactual: Math.round(counterfactual * 100) / 100,
+      savings: Math.round((counterfactual - actual) * 100) / 100,
+    };
+  });
+}
+
 module.exports = {
   PRICING,
   getModelPrice,
@@ -161,4 +232,6 @@ module.exports = {
   calculateTotalCosts,
   calculateOptimalCost,
   estimateSessionCost,
+  calculateCounterfactual,
+  calculateDailySavings,
 };

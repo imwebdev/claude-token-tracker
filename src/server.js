@@ -6,6 +6,7 @@ const calculator = require('./calculator');
 const { generateInsights } = require('./insights');
 const events = require('./events');
 const { getLearningStats } = require('./learner');
+const { calculateCounterfactual, calculateDailySavings } = require('./calculator');
 
 const config = require('./config');
 const PORT = process.env.PORT || config.read().dashboard_port || 6099;
@@ -284,6 +285,11 @@ function buildDashboardData() {
     learning: getLearningStats(),
     // Token hog analysis
     tokenHogs: events.getTokenHogs(),
+    // Savings: actual vs counterfactual (what-if-everything-was-opus)
+    savings: {
+      today: calculateCounterfactual(parser.readSessionTokenUsage()?.byModel),
+      daily: calculateDailySavings(stats?.dailyModelTokens, 14),
+    },
     // User config (for dashboard UI controls)
     config: config.read(),
   };
