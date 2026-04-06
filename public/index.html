@@ -203,6 +203,21 @@
     padding: 2px 6px; border-radius: 3px;
   }
 
+  /* ─── Dark mode AAA contrast overrides (floor section) ── */
+  /* .floor-btn.on tints the card bg with accent-dim (~#161512); #a0a0a0 drops
+     to ~6.85:1 on that surface — below the 7:1 AAA threshold. Bump to #b2b2b2
+     which clears 7:1 on both the tinted active state and the plain card bg. */
+  [data-theme="dark"] .floor-btn.on span {
+    color: #b2b2b2;
+  }
+  /* .floor-warn code sits on var(--faint)=#262626. The inherited var(--muted)
+     (#a3a3a3) only achieves ~5.1:1 on that surface — fails AAA. Use a lighter
+     neutral that clears 7:1 on #262626 (needs ≥ #ababab; use #d0d0d0 for
+     comfortable margin). */
+  [data-theme="dark"] .floor-warn code {
+    color: #d0d0d0;
+  }
+
   /* ─── Model labels ───────────────────────── */
   .ml { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
   .ml-opus { font-weight: 700; color: var(--tier-high); }
