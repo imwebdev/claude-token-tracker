@@ -650,45 +650,8 @@ function renderSavings(savings) {
 }
 
 function renderFloorWarning(D) {
-  const floor = D.config?.model_floor || 'sonnet';
-  const bm = D.todayTokenUsage?.byModel || {};
-  const opusCalls = bm.opus?.calls || 0;
-  const sonnetCalls = bm.sonnet?.calls || 0;
-  const haikuCalls = bm.haiku?.calls || 0;
-  const total = opusCalls + sonnetCalls + haikuCalls;
-  if (total === 0) return '';
-
-  // Detect primary session model — the one with the most calls
-  const byCount = [['opus', opusCalls], ['sonnet', sonnetCalls], ['haiku', haikuCalls]];
-  const primaryModel = byCount.sort((a, b) => b[1] - a[1])[0][0];
-  const primaryCalls = byCount[0][1];
-  const primaryPct = Math.round(primaryCalls / total * 100);
-  const primaryCost = bm[primaryModel]?.cost || 0;
-  const totalCost = (bm.opus?.cost || 0) + (bm.sonnet?.cost || 0) + (bm.haiku?.cost || 0);
-
-  const tierOrder = { haiku: 0, sonnet: 1, opus: 2 };
-  const sessionMoreExpensive = tierOrder[primaryModel] > tierOrder[floor];
-
-  if (sessionMoreExpensive) {
-    // Mismatch: session model is more expensive than floor setting
-    return `<div class="floor-warn">
-      <div style="margin-bottom:6px"><strong>Your Claude Code session is running on: ${primaryModel}</strong> &mdash; ${primaryPct}% of API calls, $${primaryCost.toFixed(2)} today</div>
-      <div style="margin-bottom:6px">The model floor only controls subagent routing. Your main session won't change until you restart Claude Code with a different model.</div>
-      <div>To match your floor, run: <code>claude --model ${floor}</code> &mdash; Token Coach will still upgrade to opus when a task genuinely needs it.</div>
-    </div>`;
-  }
-
-  // Session model matches or is cheaper than floor — green confirmation
-  if (primaryModel === floor) {
-    return `<div class="floor-warn" style="border-left-color:#16a34a;background:rgba(22,163,74,0.06)">
-      <strong style="color:#16a34a">&#10003; Your session is running on ${primaryModel}</strong> &mdash; matches your floor setting. Token Coach will upgrade to more capable models when tasks need it.
-    </div>`;
-  }
-
-  // Session is cheaper than floor (e.g. session=haiku, floor=sonnet) — informational
-  return `<div class="floor-warn" style="border-left-color:var(--dim);background:transparent">
-    <strong>Your Claude Code session is running on: ${primaryModel}</strong> (${primaryPct}% of calls, $${primaryCost.toFixed(2)} today). Token Coach will recommend up to ${floor} for subagent tasks.
-  </div>`;
+  // Session model display removed — Claude Code's /config model selector doesn't reliably persist
+  return '';
 }
 
 function renderFloorSelector(current) {
