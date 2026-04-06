@@ -359,6 +359,7 @@ function recommendModel(classification, opts = {}) {
 
   return {
     model,
+    baseModel: base.model,
     model_floor: floor,
     fallbackChain: model === 'haiku' ? ['haiku', 'sonnet', 'opus']
       : model === 'sonnet' ? ['sonnet', 'opus']

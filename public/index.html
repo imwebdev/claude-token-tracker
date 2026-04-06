@@ -200,13 +200,25 @@
   .tl-row:last-child { border-bottom: none; }
   .tl-time { font-family: var(--mono); font-size: 11px; color: var(--dim); width: 40px; flex-shrink: 0; padding-top: 2px; }
   .tl-time small { display: block; font-size: 10px; color: var(--dim); opacity: 0.6; }
-  .tl-model { flex-shrink: 0; min-width: 56px; padding-top: 2px; }
+  .tl-model { flex-shrink: 0; min-width: 140px; padding-top: 2px; }
   .tl-body { flex: 1; min-width: 0; }
   .tl-desc { font-size: 13px; color: var(--muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tl-meta { display: flex; gap: 8px; margin-top: 2px; align-items: center; }
   .tl-proj { font-size: 11px; color: var(--dim); font-weight: 500; }
   .tl-sz { font-family: var(--mono); font-size: 10px; color: var(--dim); }
-  .deleg-hint { color: var(--dim); font-size: 10px; margin-left: 4px; font-weight: 400; font-family: inherit; }
+  .tl-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    margin-left: 4px; font-weight: 500; vertical-align: 1px; white-space: nowrap;
+  }
+  .tl-badge-down { color: #16a34a; background: rgba(22, 163, 74, 0.1); }
+  .tl-badge-up { color: var(--danger); background: var(--danger-dim); }
+  .tl-badge-stay { color: var(--dim); background: var(--separator); }
+  [data-theme="dark"] .tl-badge-down { color: #4ade80; background: rgba(22, 163, 74, 0.12); }
+  .tl-saved {
+    font-family: var(--mono); font-size: 11px; color: #16a34a; font-weight: 600;
+    margin-left: 8px; white-space: nowrap;
+  }
+  [data-theme="dark"] .tl-saved { color: #4ade80; }
 
   /* ─── Insights ───────────────────────────── */
   .ins-item {
@@ -518,21 +530,42 @@ function renderTimeline(tab) {
   if (activeFilter !== 'all') entries = entries.filter(t => t.model.includes(activeFilter));
   if (!entries.length) return `<div class="empty">${tab === 'today' ? 'No tasks today' : 'No matching tasks'}</div>`;
 
+  // Approximate cost per prompt by model (USD) — rough estimates for display
+  const promptCost = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
+
   return (tab === 'today' ? entries : entries.slice(0, 60)).map(t => {
-    const isDel = t.model.includes('>');
     const time = t.timestamp.slice(11, 16);
-    let ml;
-    if (isDel) {
-      const [, tgt] = t.model.split('>');
-      ml = modelLabel(tgt) + '<span class="deleg-hint">subagent</span>';
+    // Handle legacy "opus>sonnet" format
+    const isDel = t.model.includes('>');
+    const finalModel = isDel ? t.model.split('>')[1] : t.model;
+    const baseModel = isDel ? t.model.split('>')[0] : (t.baseModel || null);
+
+    // Build the routing story
+    let badge = '';
+    let savings = '';
+    const tier = { haiku: 0, sonnet: 1, opus: 2 };
+    const finalTier = tier[finalModel] ?? 1;
+    const baseTier = baseModel ? (tier[baseModel] ?? 1) : finalTier;
+
+    if (t.isSubagent) {
+      badge = '<span class="tl-badge tl-badge-down">subagent</span>';
+      const saved = (promptCost[baseModel] || 0) - (promptCost[finalModel] || 0);
+      if (saved > 0) savings = `<span class="tl-saved">saved ~$${saved.toFixed(2)}</span>`;
+    } else if (baseModel && baseTier > finalTier) {
+      badge = `<span class="tl-badge tl-badge-down">↓ saved from ${baseModel}</span>`;
+      const saved = (promptCost[baseModel] || 0) - (promptCost[finalModel] || 0);
+      if (saved > 0) savings = `<span class="tl-saved">~$${saved.toFixed(2)} saved</span>`;
+    } else if (baseModel && baseTier < finalTier) {
+      badge = `<span class="tl-badge tl-badge-up">↑ upgraded from ${baseModel}</span>`;
     } else {
-      ml = modelLabel(t.model);
+      badge = '<span class="tl-badge tl-badge-stay">stayed at floor</span>';
     }
+
     return `<div class="tl-row">
       <div class="tl-time">${time}${tab==='all'?`<small>${t.timestamp.slice(5,10)}</small>`:''}</div>
-      <div class="tl-model">${ml}</div>
+      <div class="tl-model">${modelLabel(finalModel)}${badge}</div>
       <div class="tl-body">
-        <div class="tl-desc">${esc(t.description)}</div>
+        <div class="tl-desc">${esc(t.description)}${savings}</div>
         <div class="tl-meta"><span class="tl-proj">${esc(t.project)}</span><span class="tl-sz">${t.size}</span></div>
       </div>
     </div>`;
@@ -608,13 +641,14 @@ function renderTokenHogs(hogs) {
 function renderRoutingStrip(re) {
   if (!re?.stats) return '';
   const s = re.stats, rec = s.byRecommended || {};
-  return `<span style="font-weight:600;color:var(--muted)">Router recommendations:</span>
-    <span><strong style="font-family:var(--mono)">${s.total||0}</strong> classified</span>
-    <span><strong style="font-family:var(--mono)">${rec.haiku||0}</strong> haiku</span>
-    <span><strong style="font-family:var(--mono)">${rec.sonnet||0}</strong> sonnet</span>
-    <span><strong style="font-family:var(--mono)">${rec.opus||0}</strong> opus</span>
-    <span><strong style="font-family:var(--mono)">${s.delegated||0}</strong> sent to subagents</span>
-    <span><strong style="font-family:var(--mono)">${s.delegationRate||0}%</strong> routed cheaper</span>`;
+  // Estimate savings: count how many tasks were downgraded from opus
+  const downgraded = (rec.haiku || 0) + (rec.sonnet || 0);
+  const savedEst = downgraded > 0 ? (downgraded * 0.07).toFixed(2) : '0.00'; // ~$0.07 avg savings per downgrade
+  return `<span><strong style="font-family:var(--mono)">${s.total||0}</strong> tasks routed</span>
+    <span><strong style="font-family:var(--mono)">${rec.opus||0}</strong> on opus</span>
+    <span><strong style="font-family:var(--mono)">${rec.sonnet||0}</strong> on sonnet</span>
+    <span><strong style="font-family:var(--mono)">${rec.haiku||0}</strong> on haiku</span>
+    <span style="color:#16a34a;font-weight:600">~$${savedEst} estimated savings</span>`;
 }
 
 function renderSessionCosts(sc) {

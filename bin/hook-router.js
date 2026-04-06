@@ -86,8 +86,10 @@ function handleUserPromptSubmit(input) {
     prompt_preview: prompt.slice(0, 200),
     classification,
     recommended_model: recommendation.model,
+    base_model: recommendation.baseModel,
+    model_floor: recommendation.model_floor,
     recommended_reason: recommendation.reasons.join('; '),
-    actual_model: null, // filled by PreToolUse or Stop
+    actual_model: null,
     was_delegated: null,
   });
 

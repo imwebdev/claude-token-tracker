@@ -161,20 +161,25 @@ function buildDashboardData() {
       timestamp: d.ts,
       project: d.project || 'unknown',
       model: d.recommended_model || 'sonnet',
+      baseModel: d.base_model || null,
+      modelFloor: d.model_floor || null,
       size: d.classification?.complexity === 'high' ? 'L' : d.classification?.complexity === 'low' ? 'S' : 'M',
       description: d.prompt_preview || d.recommended_reason || 'task',
     });
   }
-  // Also merge subagent_dispatch events as delegation entries (opus>sonnet etc)
+  // Also merge subagent_dispatch events as delegation entries
   const hookDispatches = recentEvents.filter(e => e.type === 'subagent_dispatch');
   for (const d of hookDispatches) {
     if (!d.ts || existingTimestamps.has(d.ts)) continue;
-    const src = d.parent_model || 'opus';
     const tgt = d.model_used || d.recommended_model || 'sonnet';
+    const src = d.parent_model || 'opus';
     taskLog.push({
       timestamp: d.ts,
       project: d.project || 'unknown',
-      model: src + '>' + tgt,
+      model: tgt,
+      baseModel: src,
+      modelFloor: null,
+      isSubagent: true,
       size: 'M',
       description: d.description || d.agent_type || 'subagent dispatch',
     });
@@ -214,6 +219,8 @@ function buildDashboardData() {
       timestamp: d.ts,
       project: d.project || 'unknown',
       model: d.recommended_model || 'sonnet',
+      baseModel: d.base_model || null,
+      modelFloor: d.model_floor || null,
       size: d.classification?.complexity === 'high' ? 'L' : d.classification?.complexity === 'low' ? 'S' : 'M',
       description: d.prompt_preview || d.recommended_reason || 'task',
     }));
