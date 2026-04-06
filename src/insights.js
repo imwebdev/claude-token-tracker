@@ -11,6 +11,29 @@ function generateInsights(data) {
   const { stats, history, sessions, dailyLogs, taskLog, projects, mcpServers } = data;
   const runWaste = detectWaste(data.runs || []);
 
+  // ─── Primary model mismatch check ─────────────────────────
+  try {
+    const config = require('./config');
+    const parser = require('./parser');
+    const floor = config.read().model_floor || 'sonnet';
+    const tu = parser.readSessionTokenUsage();
+    const bm = tu?.byModel || {};
+    const opusCalls = bm.opus?.calls || 0;
+    const total = opusCalls + (bm.sonnet?.calls || 0) + (bm.haiku?.calls || 0);
+    const opusPct = total > 0 ? Math.round(opusCalls / total * 100) : 0;
+    const opusCost = bm.opus?.cost || 0;
+
+    if (floor !== 'opus' && opusPct > 70 && total > 10) {
+      insights.push({
+        _live: true,
+        severity: 'warning',
+        title: `${opusPct}% of API calls still run on opus ($${opusCost.toFixed(2)} today)`,
+        detail: `Your model floor is set to ${floor}, but your main Claude Code session is running on opus. The floor only affects subagent routing — the primary session model is set when you start Claude Code.`,
+        action: `Start Claude Code with: claude --model ${floor}. Token Coach will still upgrade to opus when a task needs it.`,
+      });
+    }
+  } catch {}
+
   // ─── Live Routing Insights (from hooks — always fresh) ────
   const routingStats = events.getRoutingStats();
 

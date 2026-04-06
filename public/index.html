@@ -192,6 +192,16 @@
     font-size: 11px; color: var(--dim); line-height: 1.4;
   }
   @media (max-width: 640px) { .floor-row { flex-direction: column; } }
+  .floor-warn {
+    margin-top: 10px; padding: 10px 12px; border-radius: 6px;
+    border-left: 3px solid var(--accent); background: var(--accent-dim);
+    font-size: 12px; color: var(--muted); line-height: 1.5;
+  }
+  .floor-warn strong { color: var(--fg); }
+  .floor-warn code {
+    font-family: var(--mono); font-size: 11px; background: var(--faint);
+    padding: 2px 6px; border-radius: 3px;
+  }
 
   /* ─── Model labels ───────────────────────── */
   .ml { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
@@ -446,9 +456,11 @@ function buildHTML() {
         <h2>Model floor</h2>
         <span class="ct" id="v-floor-label">${D.config?.model_floor || 'sonnet'}</span>
       </div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.5">The model floor controls which model Token Coach recommends for subagent tasks. Your main session model is set when you start Claude Code.</div>
       <div class="floor-row" id="v-floor-row">
         ${renderFloorSelector(D.config?.model_floor || 'sonnet')}
       </div>
+      <div id="v-floor-warning">${renderFloorWarning(D)}</div>
     </div>
 
     <div class="g2 anim d2" style="height:560px">
@@ -620,6 +632,32 @@ function renderSavings(savings) {
   </div>`;
 
   return html;
+}
+
+function renderFloorWarning(D) {
+  const floor = D.config?.model_floor || 'sonnet';
+  const bm = D.todayTokenUsage?.byModel || {};
+  const opusCalls = bm.opus?.calls || 0;
+  const sonnetCalls = bm.sonnet?.calls || 0;
+  const haikuCalls = bm.haiku?.calls || 0;
+  const total = opusCalls + sonnetCalls + haikuCalls;
+  if (total === 0) return '';
+
+  const opusPct = Math.round(opusCalls / total * 100);
+  const opusCost = bm.opus?.cost || 0;
+  const otherCost = (bm.sonnet?.cost || 0) + (bm.haiku?.cost || 0);
+
+  // Show warning if floor is not opus but opus dominates usage
+  if (floor !== 'opus' && opusPct > 70) {
+    const floorLabel = floor === 'sonnet' ? 'sonnet' : 'haiku';
+    return `<div class="floor-warn">
+      <strong>${opusPct}% of your API calls are still running on opus</strong> ($${opusCost.toFixed(2)} of $${(opusCost + otherCost).toFixed(2)} today).
+      The model floor only affects subagent routing — your main session is running on opus.
+      To actually run on ${floorLabel}, start Claude Code with <code>claude --model ${floorLabel}</code>.
+      Token Coach will still upgrade to opus when a task needs it.
+    </div>`;
+  }
+  return '';
 }
 
 function renderFloorSelector(current) {
