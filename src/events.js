@@ -118,53 +118,62 @@ function getRoutingStats(opts = {}) {
 }
 
 /**
- * Estimate cost per prompt based on model tier.
- * Rough estimates: avg ~2000 input tokens + ~800 output per prompt turn.
- * Subagent dispatches add ~1500 input + ~600 output.
- */
-const COST_PER_PROMPT = {
-  haiku:  { input: 2000, output: 800, priceIn: 1.00, priceOut: 5.00 },
-  sonnet: { input: 2000, output: 800, priceIn: 3.00, priceOut: 15.00 },
-  opus:   { input: 2000, output: 800, priceIn: 15.00, priceOut: 75.00 },
-};
-
-function estimatePromptCost(model) {
-  const tier = (model || 'opus').includes('opus') ? 'opus'
-    : (model || '').includes('sonnet') ? 'sonnet'
-    : (model || '').includes('haiku') ? 'haiku' : 'opus';
-  const c = COST_PER_PROMPT[tier];
-  const m = 1_000_000;
-  return (c.input / m * c.priceIn) + (c.output / m * c.priceOut);
-}
-
-/**
- * Get per-session cost estimates from today's events.
+ * Get per-session costs from actual Claude Code session token usage.
+ * Reads real token counts from session JSONL files instead of estimating.
  * Returns { sessions: { [session_id]: { prompts, estimatedCost, models, lastActivity } } }
  */
 function getSessionCosts() {
+  const parser = require('./parser');
   const todayStr = today();
-  const allEvents = readEvents({ since: todayStr });
-  const sessions = {};
 
+  // Get real token usage from session files
+  const realUsage = parser.readSessionTokenUsage(todayStr);
+
+  // Also get event data for metadata (lastActivity, project names, prompt counts)
+  const allEvents = readEvents({ since: todayStr });
+  const eventMeta = {};
   for (const ev of allEvents) {
     const sid = ev.session_id;
     if (!sid) continue;
-
-    if (!sessions[sid]) {
-      sessions[sid] = { prompts: 0, estimatedCost: 0, models: {}, lastActivity: ev.ts, project: ev.project || 'unknown' };
+    if (!eventMeta[sid]) {
+      eventMeta[sid] = { prompts: 0, lastActivity: ev.ts, project: ev.project || 'unknown', models: {} };
     }
-    const s = sessions[sid];
-    s.lastActivity = ev.ts;
-
+    eventMeta[sid].lastActivity = ev.ts;
     if (ev.type === 'routing_decision') {
-      s.prompts++;
+      eventMeta[sid].prompts++;
       const model = ev.recommended_model || 'opus';
-      s.models[model] = (s.models[model] || 0) + 1;
-      s.estimatedCost += estimatePromptCost(model);
+      eventMeta[sid].models[model] = (eventMeta[sid].models[model] || 0) + 1;
     } else if (ev.type === 'subagent_dispatch') {
       const model = ev.model_used || 'sonnet';
-      s.models[model] = (s.models[model] || 0) + 1;
-      s.estimatedCost += estimatePromptCost(model);
+      eventMeta[sid].models[model] = (eventMeta[sid].models[model] || 0) + 1;
+    }
+  }
+
+  // Merge real usage with event metadata
+  const sessions = {};
+
+  // Add sessions from real token usage
+  for (const [sid, usage] of Object.entries(realUsage.bySession)) {
+    const meta = eventMeta[sid] || {};
+    sessions[sid] = {
+      prompts: usage.calls || meta.prompts || 0,
+      estimatedCost: usage.cost,
+      models: usage.models || meta.models || {},
+      lastActivity: meta.lastActivity || null,
+      project: usage.project || meta.project || 'unknown',
+    };
+  }
+
+  // Add sessions from events that weren't in session files (edge case)
+  for (const [sid, meta] of Object.entries(eventMeta)) {
+    if (!sessions[sid]) {
+      sessions[sid] = {
+        prompts: meta.prompts,
+        estimatedCost: 0, // no real data available
+        models: meta.models,
+        lastActivity: meta.lastActivity,
+        project: meta.project,
+      };
     }
   }
 
@@ -177,6 +186,17 @@ function getSessionCosts() {
 function getSessionCost(sessionId) {
   const { sessions } = getSessionCosts();
   return sessions[sessionId] || { prompts: 0, estimatedCost: 0, models: {}, lastActivity: null };
+}
+
+/**
+ * Legacy estimate — kept for fallback if session files aren't available.
+ */
+function estimatePromptCost(model) {
+  const tier = (model || 'opus').includes('opus') ? 'opus'
+    : (model || '').includes('sonnet') ? 'sonnet'
+    : (model || '').includes('haiku') ? 'haiku' : 'opus';
+  const costs = { haiku: 0.006, sonnet: 0.018, opus: 0.09 }; // rough per-prompt
+  return costs[tier] || costs.opus;
 }
 
 /**
@@ -236,6 +256,39 @@ function getTokenHogs() {
   };
 }
 
+/**
+ * Get the last N events for a specific session, optionally filtered by type.
+ * Reads only today's file for performance (sessions don't span days).
+ */
+function getSessionEvents(sessionId, opts = {}) {
+  if (!sessionId) return [];
+  const file = path.join(EVENTS_DIR, `${today()}.jsonl`);
+  if (!fs.existsSync(file)) return [];
+
+  const lines = fs.readFileSync(file, 'utf-8').trim().split('\n').filter(Boolean);
+  const results = [];
+
+  for (const line of lines) {
+    try {
+      const ev = JSON.parse(line);
+      if (ev.session_id !== sessionId) continue;
+      if (opts.type && ev.type !== opts.type) continue;
+      results.push(ev);
+    } catch {}
+  }
+
+  if (opts.limit) return results.slice(-opts.limit);
+  return results;
+}
+
+/**
+ * Get the most recent routing decision for a session.
+ */
+function getLastRoutingDecision(sessionId) {
+  const decisions = getSessionEvents(sessionId, { type: 'routing_decision' });
+  return decisions.length > 0 ? decisions[decisions.length - 1] : null;
+}
+
 module.exports = {
   logEvent,
   readEvents,
@@ -244,6 +297,8 @@ module.exports = {
   getSessionCost,
   estimatePromptCost,
   getTokenHogs,
+  getSessionEvents,
+  getLastRoutingDecision,
   DATA_DIR,
   EVENTS_DIR,
 };

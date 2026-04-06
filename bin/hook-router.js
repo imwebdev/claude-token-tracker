@@ -53,11 +53,29 @@ function handleSessionStart(input) {
   return null;
 }
 
+// Correction patterns — user is unhappy with previous turn's result
+const CORRECTION_PATTERNS = /^(no[,. !]|wrong|that's not right|try again|fix (this|that|it)|redo|not what i|that didn't work|still broken|nope|incorrect)/i;
+
 function handleUserPromptSubmit(input) {
   const prompt = input.prompt || '';
 
   // Skip very short prompts (commands, yes/no answers)
   if (prompt.length < 10) return null;
+
+  // ── Correction detection: check if this prompt is correcting the previous turn ──
+  const trimmed = prompt.trim();
+  if (CORRECTION_PATTERNS.test(trimmed)) {
+    const lastDecision = events.getLastRoutingDecision(input.session_id);
+    if (lastDecision) {
+      events.logEvent('outcome_correction', {
+        session_id: input.session_id,
+        project: getProject(input),
+        prior_family: (lastDecision.classification || {}).family || 'unknown',
+        prior_model: lastDecision.recommended_model || 'opus',
+        prompt_preview: trimmed.slice(0, 100),
+      });
+    }
+  }
 
   const classification = router.classifyTask(prompt);
   const recommendation = router.recommendModel(classification);
@@ -288,19 +306,67 @@ function handleSubagentStop(input) {
 }
 
 function handleStop(input) {
+  const lastDecision = events.getLastRoutingDecision(input.session_id);
+
   events.logEvent('turn_end', {
     session_id: input.session_id,
     project: getProject(input),
   });
+
+  // Log a successful outcome for the last routing decision
+  if (lastDecision) {
+    // Check for escalation: was same family dispatched to a higher model?
+    const dispatches = events.getSessionEvents(input.session_id, { type: 'subagent_dispatch' });
+    const decisionTs = lastDecision.ts;
+    const family = (lastDecision.classification || {}).family || 'unknown';
+    const recModel = lastDecision.recommended_model || 'opus';
+    const modelTier = { haiku: 0, sonnet: 1, opus: 2 };
+
+    // Escalation = same family dispatched to a higher-tier model after the routing decision
+    const wasEscalated = dispatches.some(d => {
+      if (!d.ts || d.ts < decisionTs) return false;
+      const dFamily = (d.classification || {}).family || 'unknown';
+      const dModel = d.model_used || 'opus';
+      return dFamily === family && (modelTier[dModel] || 0) > (modelTier[recModel] || 0);
+    });
+
+    events.logEvent('outcome', {
+      session_id: input.session_id,
+      project: getProject(input),
+      family,
+      model: recModel,
+      turn_success: true,
+      was_escalated: wasEscalated,
+    });
+  }
+
   return null;
 }
 
 function handleStopFailure(input) {
+  const lastDecision = events.getLastRoutingDecision(input.session_id);
+
   events.logEvent('error', {
     session_id: input.session_id,
     project: getProject(input),
     error_type: input.error_type,
   });
+
+  // Log a failed outcome for the last routing decision
+  if (lastDecision) {
+    const family = (lastDecision.classification || {}).family || 'unknown';
+    const recModel = lastDecision.recommended_model || 'opus';
+
+    events.logEvent('outcome', {
+      session_id: input.session_id,
+      project: getProject(input),
+      family,
+      model: recModel,
+      turn_success: false,
+      was_escalated: false,
+    });
+  }
+
   return null;
 }
 

@@ -1,125 +1,160 @@
 /**
- * Adaptive learning — improves routing from historical dispatch data.
+ * Adaptive learning — improves routing from multi-signal outcome data.
  *
- * Tracks success rates per family×model from two data sources:
- * 1. Subagent dispatches (is_optimal field — did the dispatch match recommendation?)
- * 2. Escalation patterns (if a task was dispatched to haiku then re-dispatched to sonnet,
- *    haiku "failed" for that family)
+ * Replaces the old "routing compliance" signal (did the used model match
+ * the recommendation?) with a weighted outcome score derived from three
+ * independent signals:
  *
- * Uses a Bayesian-style approach:
- * - Start with prior confidence from hardcoded rules (the base recommendation)
- * - Update with observed data: success_rate = successes / total_samples
- * - Minimum 5 samples before adjusting (avoid overfitting to noise)
- * - Recent events weighted 2x vs older events (decay)
- * - Never downgrade architecture below opus (safety floor)
+ *   1. Turn outcome  (Stop vs StopFailure)         weight: 0.40
+ *   2. No escalation (wasn't re-dispatched higher)  weight: 0.35
+ *   3. No correction (next prompt isn't a fix)       weight: 0.25
  *
- * The learner produces "adjustments" that the router can apply:
- *   { family: "debug", model: "sonnet", confidence: 0.85, samples: 12, suggestion: "upgrade" }
+ * Each signal is 0 or 1. The weighted average produces a score in [0, 1].
+ * These scores are aggregated per family×model to produce routing adjustments.
+ *
+ * Minimum 5 outcome events before adjusting (avoid overfitting to noise).
+ * Recent events (within 14 days) get 2x weight.
+ * Never downgrade architecture below opus (safety floor).
  */
-const fs = require('fs');
-const path = require('path');
 const events = require('./events');
-const dataHome = require('./data-home');
 
 const MIN_SAMPLES = 5;
-const RECENCY_DAYS = 14; // Events within this window get 2x weight
+const RECENCY_DAYS = 14;
 const CACHE_TTL = 300_000; // 5 minutes
+
+// Signal weights — must sum to 1.0
+const WEIGHTS = {
+  turn_success: 0.40,
+  no_escalation: 0.35,
+  no_correction: 0.25,
+};
 
 let _cache = null;
 let _cacheTime = 0;
 
 /**
- * Build learning data from historical events.
- * Returns { byFamilyModel: { "debug:sonnet": { total, successes, failures, rate, samples } }, ... }
+ * Build learning data from outcome events and correction events.
+ * Returns { byFamilyModel: { "debug:sonnet": { total, weightedScore, ... } } }
  */
 function buildLearningData() {
   const now = Date.now();
   if (_cache && (now - _cacheTime) < CACHE_TTL) return _cache;
 
   const allEvents = events.readEvents({});
-  const dispatches = allEvents.filter(e => e.type === 'subagent_dispatch');
-  const decisions = allEvents.filter(e => e.type === 'routing_decision');
+  const outcomes = allEvents.filter(e => e.type === 'outcome');
+  const corrections = allEvents.filter(e => e.type === 'outcome_correction');
 
   const recencyThreshold = new Date(now - RECENCY_DAYS * 86400_000).toISOString();
 
-  // Track per family×model
+  // Index corrections by session for fast lookup
+  // A correction in session X means the previous turn in session X had a negative signal
+  const correctionsBySession = {};
+  for (const c of corrections) {
+    const sid = c.session_id;
+    if (!sid) continue;
+    if (!correctionsBySession[sid]) correctionsBySession[sid] = [];
+    correctionsBySession[sid].push(c);
+  }
+
   const stats = {};
 
   function getOrCreate(family, model) {
     const key = `${family}:${model}`;
-    if (!stats[key]) stats[key] = { family, model, total: 0, successes: 0, failures: 0, weightedTotal: 0, weightedSuccesses: 0 };
+    if (!stats[key]) {
+      stats[key] = {
+        family,
+        model,
+        total: 0,
+        weightedScoreSum: 0,
+        weightedTotal: 0,
+        // Per-signal tracking for dashboard visibility
+        signals: { turn_success: 0, no_escalation: 0, no_correction: 0 },
+        signalTotal: 0,
+      };
+    }
     return stats[key];
   }
 
-  // Source 1: Subagent dispatches — is_optimal tells us if the recommendation matched
+  for (const o of outcomes) {
+    const family = o.family || 'unknown';
+    const model = o.model || 'opus';
+    const isRecent = o.ts >= recencyThreshold;
+    const weight = isRecent ? 2 : 1;
+
+    // Signal 1: turn success (from outcome event)
+    const turnSuccess = o.turn_success ? 1 : 0;
+
+    // Signal 2: no escalation (from outcome event)
+    const noEscalation = o.was_escalated ? 0 : 1;
+
+    // Signal 3: no correction — check if a correction event followed in this session
+    // A correction event logged shortly after this outcome means the user was unhappy
+    const sessionCorrections = correctionsBySession[o.session_id] || [];
+    const wasFollowedByCorrection = sessionCorrections.some(c => {
+      if (!c.ts || !o.ts) return false;
+      const timeDiff = new Date(c.ts) - new Date(o.ts);
+      // Correction within 5 minutes of this outcome counts against it
+      return timeDiff > 0 && timeDiff < 300_000;
+    });
+    const noCorrection = wasFollowedByCorrection ? 0 : 1;
+
+    // Weighted outcome score for this single event
+    const score = (turnSuccess * WEIGHTS.turn_success) +
+                  (noEscalation * WEIGHTS.no_escalation) +
+                  (noCorrection * WEIGHTS.no_correction);
+
+    const entry = getOrCreate(family, model);
+    entry.total++;
+    entry.weightedScoreSum += score * weight;
+    entry.weightedTotal += weight;
+    entry.signalTotal++;
+    entry.signals.turn_success += turnSuccess;
+    entry.signals.no_escalation += noEscalation;
+    entry.signals.no_correction += noCorrection;
+  }
+
+  // ── Backfill from legacy data (subagent_dispatch events without outcomes) ──
+  // This keeps the learner useful during the transition period before enough
+  // outcome events accumulate. Legacy events get half weight.
+  const dispatches = allEvents.filter(e => e.type === 'subagent_dispatch');
+  const outcomeTimestamps = new Set(outcomes.map(o => o.session_id + ':' + (o.family || '')));
+
   for (const d of dispatches) {
     const cls = d.classification || {};
     const family = cls.family || 'unknown';
-    const usedModel = d.model_used || 'opus';
-    const recModel = d.recommended_model || 'sonnet';
-    const isRecent = d.ts >= recencyThreshold;
-    const weight = isRecent ? 2 : 1;
+    const sessionKey = d.session_id + ':' + family;
 
-    // Record success for the model that was used
+    // Skip if we already have outcome data for this session+family
+    if (outcomeTimestamps.has(sessionKey)) continue;
+
+    const usedModel = d.model_used || 'opus';
+    const isRecent = d.ts >= recencyThreshold;
+    const weight = (isRecent ? 2 : 1) * 0.5; // half weight for legacy
+
+    // Legacy signal: is_optimal (compliance) as a rough proxy
+    const score = d.is_optimal ? 0.8 : 0.3;
+
     const entry = getOrCreate(family, usedModel);
     entry.total++;
+    entry.weightedScoreSum += score * weight;
     entry.weightedTotal += weight;
-
-    if (d.is_optimal) {
-      // Used model matched recommendation — count as success for that model
-      entry.successes++;
-      entry.weightedSuccesses += weight;
-    } else {
-      // Used a more expensive model than recommended — the cheaper model "failed"
-      // (user/system decided it wasn't good enough)
-      entry.failures++;
-
-      // Also record that the recommended (cheaper) model was implicitly inadequate
-      const cheaperEntry = getOrCreate(family, recModel);
-      cheaperEntry.total++;
-      cheaperEntry.failures++;
-      cheaperEntry.weightedTotal += weight;
-    }
   }
 
-  // Source 2: Routing decisions that were NOT followed by a dispatch
-  // (the recommendation was used directly — implicit success for the recommended model)
-  const dispatchTimestamps = new Set(dispatches.map(d => d.ts).filter(Boolean));
-  for (const d of decisions) {
-    if (!d.ts) continue;
-    const cls = d.classification || {};
-    const family = cls.family || 'unknown';
-    const recModel = d.recommended_model || 'sonnet';
-    const isRecent = d.ts >= recencyThreshold;
-    const weight = isRecent ? 2 : 1;
-
-    // If this decision led to a dispatch, it's already counted above
-    // We approximate: if no dispatch within 5 seconds of this decision, it was used directly
-    const hasDispatch = dispatches.some(disp =>
-      disp.session_id === d.session_id &&
-      disp.ts && d.ts &&
-      Math.abs(new Date(disp.ts) - new Date(d.ts)) < 30_000
-    );
-
-    if (!hasDispatch) {
-      // Model was used directly (no delegation) — counts as success
-      const entry = getOrCreate(family, recModel);
-      entry.total++;
-      entry.successes++;
-      entry.weightedTotal += weight;
-      entry.weightedSuccesses += weight;
-    }
-  }
-
-  // Calculate rates
+  // Calculate final rates
   const result = {};
   for (const [key, s] of Object.entries(stats)) {
+    const weightedRate = s.weightedTotal > 0 ? s.weightedScoreSum / s.weightedTotal : 0;
     result[key] = {
       ...s,
-      rate: s.total > 0 ? s.successes / s.total : 0,
-      weightedRate: s.weightedTotal > 0 ? s.weightedSuccesses / s.weightedTotal : 0,
+      rate: weightedRate,
+      weightedRate,
       samples: s.total,
       meetsThreshold: s.total >= MIN_SAMPLES,
+      signalBreakdown: s.signalTotal > 0 ? {
+        turn_success: s.signals.turn_success / s.signalTotal,
+        no_escalation: s.signals.no_escalation / s.signalTotal,
+        no_correction: s.signals.no_correction / s.signalTotal,
+      } : null,
     };
   }
 
@@ -141,30 +176,29 @@ function getAdjustment(family, recommendedModel) {
 
   const rate = entry.weightedRate;
 
-  // If the recommended model succeeds >85% of the time — confirm it
-  if (rate >= 0.85) {
+  // High success (>0.80) — confirm the recommendation
+  if (rate >= 0.80) {
     return {
       suggestion: 'confirm',
-      reason: `${recommendedModel} succeeds ${Math.round(rate * 100)}% for ${family} (${entry.samples} samples)`,
+      reason: `${recommendedModel} scores ${Math.round(rate * 100)}% for ${family} (${entry.samples} outcomes)`,
       confidence: rate,
       samples: entry.samples,
     };
   }
 
-  // If success rate is low (<60%), suggest upgrading to a more capable model
-  if (rate < 0.60) {
+  // Low success (<0.55) — suggest upgrading to a more capable model
+  if (rate < 0.55) {
     const upgrade = recommendedModel === 'haiku' ? 'sonnet' : recommendedModel === 'sonnet' ? 'opus' : null;
     if (upgrade) {
-      // Check if the upgrade model has better stats
       const upgradeKey = `${family}:${upgrade}`;
       const upgradeEntry = data.byFamilyModel[upgradeKey];
-      const upgradeRate = upgradeEntry?.weightedRate || 0.5; // assume 50% if no data
+      const upgradeRate = upgradeEntry?.weightedRate || 0.5;
 
       if (upgradeRate > rate) {
         return {
           suggestion: 'upgrade',
           upgradeTo: upgrade,
-          reason: `${recommendedModel} only succeeds ${Math.round(rate * 100)}% for ${family} -- ${upgrade} at ${Math.round(upgradeRate * 100)}% (${entry.samples} samples)`,
+          reason: `${recommendedModel} scores ${Math.round(rate * 100)}% for ${family} -- ${upgrade} at ${Math.round(upgradeRate * 100)}% (${entry.samples} outcomes)`,
           confidence: rate,
           samples: entry.samples,
         };
@@ -172,19 +206,18 @@ function getAdjustment(family, recommendedModel) {
     }
   }
 
-  // If success rate is very high (>90%) and this is an expensive model, suggest downgrading
-  if (rate >= 0.90 && recommendedModel !== 'haiku') {
+  // Very high success (>0.85) on expensive model — suggest downgrading
+  if (rate >= 0.85 && recommendedModel !== 'haiku') {
     const downgrade = recommendedModel === 'opus' ? 'sonnet' : recommendedModel === 'sonnet' ? 'haiku' : null;
     if (downgrade) {
       const downgradeKey = `${family}:${downgrade}`;
       const downgradeEntry = data.byFamilyModel[downgradeKey];
 
-      // Only suggest downgrade if the cheaper model also has good stats (or no data = worth trying)
-      if (!downgradeEntry || !downgradeEntry.meetsThreshold || downgradeEntry.weightedRate >= 0.70) {
+      if (!downgradeEntry || !downgradeEntry.meetsThreshold || downgradeEntry.weightedRate >= 0.65) {
         return {
           suggestion: 'downgrade',
           downgradeTo: downgrade,
-          reason: `${recommendedModel} succeeds ${Math.round(rate * 100)}% for ${family} -- ${downgrade} may suffice (${entry.samples} samples)`,
+          reason: `${recommendedModel} scores ${Math.round(rate * 100)}% for ${family} -- ${downgrade} may suffice (${entry.samples} outcomes)`,
           confidence: rate,
           samples: entry.samples,
         };
@@ -210,11 +243,12 @@ function getLearningStats() {
       model: entry.model,
       rate: entry.weightedRate,
       samples: entry.samples,
+      signalBreakdown: entry.signalBreakdown,
       adjustment: adj,
     });
   }
 
-  // Sort by impact: upgrades first, then low-confidence entries
+  // Sort by impact: upgrades first, then low-score entries
   adjustments.sort((a, b) => {
     if (a.adjustment?.suggestion === 'upgrade' && b.adjustment?.suggestion !== 'upgrade') return -1;
     if (b.adjustment?.suggestion === 'upgrade' && a.adjustment?.suggestion !== 'upgrade') return 1;
@@ -226,6 +260,7 @@ function getLearningStats() {
     totalSamples: Object.values(data.byFamilyModel).reduce((s, e) => s + e.samples, 0),
     familiesTracked: new Set(Object.values(data.byFamilyModel).map(e => e.family)).size,
     generatedAt: data.generatedAt,
+    signalWeights: WEIGHTS,
   };
 }
 
