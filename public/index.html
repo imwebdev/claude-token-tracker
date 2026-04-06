@@ -297,6 +297,18 @@
 let DATA = null;
 let activeFilter = 'all';
 let timelineTab = 'auto';
+let activeProject = 'all';
+
+/** Turn a path-based project slug into a clean display name */
+function cleanProject(slug) {
+  if (!slug) return 'unknown';
+  // Strip leading path segments like "-home-cchhita-"
+  const parts = slug.replace(/^-/, '').split('-');
+  // Find the last meaningful segment (skip home, username)
+  if (parts.length >= 3) return parts.slice(2).join('-');
+  if (parts.length === 2) return parts[1];
+  return slug;
+}
 
 function getTheme() { return localStorage.getItem('token-coach-theme') || 'dark'; }
 function setTheme(t) { localStorage.setItem('token-coach-theme', t); document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : ''); }
@@ -444,6 +456,7 @@ function buildHTML() {
         <h2>Session costs</h2>
         <span class="ct" id="v-sc-ct">${Object.keys(D.sessionCosts?.sessions||{}).length} today</span>
       </div>
+      <div class="filters" id="v-sc-filters" role="toolbar" aria-label="Filter by project">${renderProjectFilters(D.sessionCosts)}</div>
       <div id="v-sc-body">${renderSessionCosts(D.sessionCosts)}</div>
     </div>
 
@@ -651,19 +664,70 @@ function renderRoutingStrip(re) {
     <span style="color:#16a34a;font-weight:600">~$${savedEst} estimated savings</span>`;
 }
 
+function renderProjectFilters(sc) {
+  const sessions = sc?.sessions || {};
+  const projects = new Set();
+  for (const [, s] of Object.values(sessions).length ? Object.entries(sessions) : []) {
+    projects.add(s.project || 'unknown');
+  }
+  const sorted = [...projects].sort();
+  if (sorted.length <= 1) return ''; // No filter needed for 0-1 projects
+  let html = `<button class="flt ${activeProject==='all'?'on':''}" onclick="setProject('all')" aria-pressed="${activeProject==='all'}">all</button>`;
+  for (const p of sorted) {
+    const label = cleanProject(p);
+    html += `<button class="flt ${activeProject===p?'on':''}" onclick="setProject('${esc(p)}')" aria-pressed="${activeProject===p}">${esc(label)}</button>`;
+  }
+  return html;
+}
+
+function setProject(proj) {
+  activeProject = proj;
+  if (DATA) {
+    document.getElementById('v-sc-body').innerHTML = renderSessionCosts(DATA.sessionCosts);
+    document.getElementById('v-sc-filters').innerHTML = renderProjectFilters(DATA.sessionCosts);
+    // Update the count badge
+    const sessions = DATA.sessionCosts?.sessions || {};
+    const filtered = activeProject === 'all'
+      ? Object.keys(sessions).length
+      : Object.entries(sessions).filter(([, s]) => s.project === activeProject).length;
+    document.getElementById('v-sc-ct').textContent = filtered + ' sessions';
+  }
+}
+
 function renderSessionCosts(sc) {
   const sessions = sc?.sessions || {};
-  const entries = Object.entries(sessions).sort((a, b) => (b[1].lastActivity||'').localeCompare(a[1].lastActivity||''));
+  let entries = Object.entries(sessions).sort((a, b) => (b[1].lastActivity||'').localeCompare(a[1].lastActivity||''));
   if (!entries.length) return '<div class="empty">No session data yet.</div>';
 
+  // Apply project filter
+  if (activeProject !== 'all') {
+    entries = entries.filter(([, s]) => s.project === activeProject);
+    if (!entries.length) return '<div class="empty">No sessions for this project.</div>';
+  }
+
   let totalCost = 0, totalPrompts = 0;
-  for (const [, s] of entries) { totalCost += s.estimatedCost; totalPrompts += s.prompts; }
+  const modelTotals = {};
+  for (const [, s] of entries) {
+    totalCost += s.estimatedCost;
+    totalPrompts += s.prompts;
+    for (const [m, c] of Object.entries(s.models || {})) {
+      modelTotals[m] = (modelTotals[m] || 0) + c;
+    }
+  }
+  const modelBreakdown = Object.entries(modelTotals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([m, c]) => `<span class="ml ml-${m}">${m}</span>&nbsp;${c}`)
+    .join('&nbsp;&nbsp;&nbsp;');
 
   let html = `<div class="sc-summary">
-    <div><div class="sc-stat-val" style="color:var(--accent)">$${totalCost.toFixed(2)}</div><div class="sc-stat-label">cost today</div></div>
+    <div><div class="sc-stat-val" style="color:var(--accent)">$${totalCost.toFixed(2)}</div><div class="sc-stat-label">cost${activeProject !== 'all' ? '' : ' today'}</div></div>
     <div><div class="sc-stat-val">${totalPrompts}</div><div class="sc-stat-label">API calls</div></div>
     <div><div class="sc-stat-val">${entries.length}</div><div class="sc-stat-label">sessions</div></div>
   </div>`;
+
+  if (modelBreakdown) {
+    html += `<div style="margin-bottom:10px;font-size:11px;color:var(--dim)">${modelBreakdown}</div>`;
+  }
 
   html += '<div style="max-height:240px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--faint) transparent">';
   for (const [sid, s] of entries) {
@@ -671,7 +735,7 @@ function renderSessionCosts(sc) {
     const models = Object.entries(s.models||{}).map(([m,c]) => `<span class="ml ml-${m}">${m}</span> <span style="color:var(--dim);font-size:11px">&times;${c}</span>`).join('&nbsp;&nbsp;');
     html += `<div class="sc-row">
       <div>
-        <div style="font-size:13px;font-weight:500">${esc(s.project)} <span style="color:var(--dim);font-weight:400;font-size:11px;font-family:var(--mono)">${sid.slice(0,8)}</span></div>
+        <div style="font-size:13px;font-weight:500">${esc(cleanProject(s.project))} <span style="color:var(--dim);font-weight:400;font-size:11px;font-family:var(--mono)">${sid.slice(0,8)}</span></div>
         <div style="margin-top:2px">${models}</div>
       </div>
       <div style="text-align:right">
