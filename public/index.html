@@ -147,6 +147,27 @@
   @media (max-width: 860px) { .g2 { grid-template-columns: 1fr; height: auto !important; } }
   @media (max-width: 640px) { .g2-eq { grid-template-columns: 1fr; } }
 
+  /* ─── Model floor selector ────────────────── */
+  .floor-row {
+    display: flex; gap: 8px; align-items: stretch;
+  }
+  .floor-btn {
+    flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--card); cursor: pointer; text-align: left; font-family: inherit;
+    transition: border-color 200ms, background 200ms;
+  }
+  .floor-btn:hover { border-color: var(--dim); }
+  .floor-btn.on {
+    border-color: var(--accent); background: var(--accent-dim);
+  }
+  .floor-btn strong {
+    display: block; font-size: 13px; font-weight: 600; margin-bottom: 2px;
+  }
+  .floor-btn span {
+    font-size: 11px; color: var(--dim); line-height: 1.4;
+  }
+  @media (max-width: 640px) { .floor-row { flex-direction: column; } }
+
   /* ─── Model labels ───────────────────────── */
   .ml { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
   .ml-opus { font-weight: 700; color: var(--tier-high); }
@@ -258,11 +279,12 @@ function setSection(id, html) {
 function softRefresh() {
   const D = DATA; if (!D) return;
   const s = D.stats, r = D.routing, today = r.todayStats, tab = getEffectiveTab();
-  setText('v-tasks', today.totalTasks);
-  setText('v-opus', today.models.opus || 0);
-  setText('v-sonnet', today.models.sonnet || 0);
-  setText('v-haiku', today.models.haiku || 0);
-  setText('v-deleg', today.delegations);
+  const bm = D.todayTokenUsage?.byModel || {};
+  setText('v-calls', (bm.opus?.calls||0) + (bm.sonnet?.calls||0) + (bm.haiku?.calls||0) + (bm.unknown?.calls||0));
+  setText('v-opus', bm.opus?.calls || 0);
+  setText('v-sonnet', bm.sonnet?.calls || 0);
+  setText('v-haiku', bm.haiku?.calls || 0);
+  setText('v-sessions', Object.keys(D.todayTokenUsage?.bySession || D.sessionCosts?.sessions || {}).length);
   const todayCost = D.todayTokenUsage ? D.todayTokenUsage.totalCost : (D.sessionCosts ? Object.values(D.sessionCosts.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0) : 0);
   setText('v-cost', '$' + todayCost.toFixed(2));
   setText('v-total', r.totalTasks + ' total');
@@ -307,6 +329,15 @@ function buildHTML() {
   const D = DATA; if (!D) return '';
   const s = D.stats, r = D.routing, today = r.todayStats, tab = getEffectiveTab(), isDark = getTheme() === 'dark';
   const totalCost = D.todayTokenUsage ? D.todayTokenUsage.totalCost : Object.values(D.sessionCosts?.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0);
+  // Actual model usage from session JSONL files (what really ran)
+  const bm = D.todayTokenUsage?.byModel || {};
+  const tu = {
+    opusCalls: (bm.opus?.calls||0),
+    sonnetCalls: (bm.sonnet?.calls||0),
+    haikuCalls: (bm.haiku?.calls||0),
+    totalCalls: (bm.opus?.calls||0) + (bm.sonnet?.calls||0) + (bm.haiku?.calls||0) + (bm.unknown?.calls||0),
+    sessionCount: Object.keys(D.todayTokenUsage?.bySession || D.sessionCosts?.sessions || {}).length,
+  };
 
   return `
     <header class="hdr anim" role="banner">
@@ -319,15 +350,25 @@ function buildHTML() {
 
     <main id="main-content">
     <section class="metrics anim d1" aria-label="Today's metrics">
-      <div class="metric"><span class="metric-val" id="v-tasks">${today.totalTasks}</span><span class="metric-label">tasks today</span></div>
-      <div class="metric"><span class="metric-val" id="v-opus">${today.models.opus||0}</span><span class="metric-label">opus</span></div>
-      <div class="metric"><span class="metric-val" id="v-sonnet">${today.models.sonnet||0}</span><span class="metric-label">sonnet</span></div>
-      <div class="metric"><span class="metric-val" id="v-haiku">${today.models.haiku||0}</span><span class="metric-label">haiku</span></div>
-      <div class="metric"><span class="metric-val" id="v-deleg">${today.delegations}</span><span class="metric-label">delegated</span></div>
+      <div class="metric"><span class="metric-val" id="v-calls">${tu.totalCalls||0}</span><span class="metric-label">API calls today</span></div>
+      <div class="metric"><span class="metric-val" id="v-opus">${tu.opusCalls||0}</span><span class="metric-label">opus calls</span></div>
+      <div class="metric"><span class="metric-val" id="v-sonnet">${tu.sonnetCalls||0}</span><span class="metric-label">sonnet calls</span></div>
+      <div class="metric"><span class="metric-val" id="v-haiku">${tu.haikuCalls||0}</span><span class="metric-label">haiku calls</span></div>
+      <div class="metric"><span class="metric-val" id="v-sessions">${tu.sessionCount||0}</span><span class="metric-label">sessions</span></div>
       <div class="metric metric-accent"><span class="metric-val" id="v-cost">$${totalCost.toFixed(2)}</span><span class="metric-label">cost today</span></div>
     </div>
 
     </section>
+
+    <div class="card anim d1" style="margin-bottom:12px">
+      <div class="card-hd">
+        <h2>Model floor</h2>
+        <span class="ct" id="v-floor-label">${D.config?.model_floor || 'sonnet'}</span>
+      </div>
+      <div class="floor-row" id="v-floor-row">
+        ${renderFloorSelector(D.config?.model_floor || 'sonnet')}
+      </div>
+    </div>
 
     <div class="g2 anim d2" style="height:560px">
       <div class="card" style="display:flex;flex-direction:column;min-height:0">
@@ -419,6 +460,32 @@ function render() {
 }
 
 /* ─── Renderers ─────────────────────────────── */
+
+function renderFloorSelector(current) {
+  const floors = [
+    { id: 'haiku', label: 'Haiku-first', desc: 'Start on haiku, only upgrade when needed' },
+    { id: 'sonnet', label: 'Sonnet-first', desc: 'Start on sonnet, upgrade to opus for complex work' },
+    { id: 'opus', label: 'Opus-first', desc: 'Everything runs on opus, no routing' },
+  ];
+  return floors.map(f =>
+    `<button class="floor-btn ${f.id === current ? 'on' : ''}" onclick="setFloor('${f.id}')" aria-pressed="${f.id === current}"><strong>${f.label}</strong><span>${f.desc}</span></button>`
+  ).join('');
+}
+
+function setFloor(floor) {
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_floor: floor }),
+  }).then(r => r.json()).then(cfg => {
+    if (DATA) DATA.config = cfg;
+    // Update UI without full re-render
+    const row = document.getElementById('v-floor-row');
+    if (row) row.innerHTML = renderFloorSelector(floor);
+    const label = document.getElementById('v-floor-label');
+    if (label) label.textContent = floor;
+  }).catch(() => {});
+}
 
 function renderTimeline(tab) {
   if (!DATA) return '';
@@ -517,7 +584,8 @@ function renderTokenHogs(hogs) {
 function renderRoutingStrip(re) {
   if (!re?.stats) return '';
   const s = re.stats, rec = s.byRecommended || {};
-  return `<span><strong style="font-family:var(--mono)">${s.total||0}</strong> classified</span>
+  return `<span style="font-weight:600;color:var(--muted)">Router recommendations:</span>
+    <span><strong style="font-family:var(--mono)">${s.total||0}</strong> classified</span>
     <span><strong style="font-family:var(--mono)">${rec.haiku||0}</strong> haiku</span>
     <span><strong style="font-family:var(--mono)">${rec.sonnet||0}</strong> sonnet</span>
     <span><strong style="font-family:var(--mono)">${rec.opus||0}</strong> opus</span>
@@ -550,7 +618,7 @@ function renderSessionCosts(sc) {
       </div>
       <div style="text-align:right">
         <div style="font-family:var(--mono);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">$${s.estimatedCost.toFixed(2)}</div>
-        <div style="font-size:11px;color:var(--dim)">${s.prompts} prompts &middot; ${time}</div>
+        <div style="font-size:11px;color:var(--dim)">${s.prompts} API calls &middot; ${time}</div>
       </div>
     </div>`;
   }

@@ -277,6 +277,8 @@ function buildDashboardData() {
     learning: getLearningStats(),
     // Token hog analysis
     tokenHogs: events.getTokenHogs(),
+    // User config (for dashboard UI controls)
+    config: config.read(),
   };
 }
 
@@ -302,6 +304,38 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: err.message }));
     }
     return;
+  }
+
+  if (req.url === '/api/config') {
+    if (req.method === 'GET') {
+      const cfg = config.read();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(cfg));
+      return;
+    }
+    if (req.method === 'POST' || req.method === 'PUT') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const updates = JSON.parse(body);
+          // Only allow known config keys
+          const allowed = new Set(Object.keys(config.DEFAULTS));
+          for (const [k, v] of Object.entries(updates)) {
+            if (!allowed.has(k)) continue;
+            if (k === 'model_floor' && !['haiku', 'sonnet', 'opus'].includes(v)) continue;
+            config.set(k, v);
+          }
+          config.clearCache();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(config.read()));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
   }
 
   if (req.url === '/api/dashboard') {

@@ -165,15 +165,7 @@ function classifyTask(task = '') {
 }
 
 /**
- * Routing preference tiers.
- * preference 0-25:  "max savings" -- push everything possible to haiku
- * preference 26-50: "cost-conscious" (default 35) -- sonnet-heavy, opus only for architecture/multi-file
- * preference 51-75: "balanced" -- opus for complex tasks
- * preference 76-100: "max quality" -- opus for anything medium+
- */
-
-/**
- * Get the base model recommendation (before preference adjustment).
+ * Get the base model recommendation (before floor adjustment).
  * Returns { model, reason } for each family×complexity.
  */
 function getBaseRecommendation(family, complexity) {
@@ -230,29 +222,38 @@ function upgrade(model) {
 const OPUS_FLOOR = new Set([TASK_FAMILIES.ARCHITECTURE]);
 
 /**
- * Recommend the optimal model tier based on classification and user preference.
+ * Recommend the optimal model tier based on classification and model floor.
+ *
+ * Model floor behaviour:
+ *   'haiku'  — start on haiku, only upgrade when the task genuinely needs more
+ *   'sonnet' — start on sonnet (default), upgrade to opus for complex/architecture
+ *   'opus'   — everything runs on opus, no downgrade
+ *
  * @param {object} classification -- from classifyTask()
- * @param {object} opts -- { preference?: number (0-100) }
+ * @param {object} opts -- { model_floor?: string, preference?: number (legacy) }
  */
 function recommendModel(classification, opts = {}) {
   const { family, complexity, customModel } = classification || {};
-  let preference = opts.preference;
 
-  // Load from config if not passed explicitly
-  if (preference == null) {
+  // Resolve model floor from opts or config
+  let floor = opts.model_floor;
+  let preference = opts.preference; // legacy compat
+  if (!floor) {
     try {
       const config = require('./config');
-      preference = config.read().routing_preference;
-    } catch {
-      preference = 35; // default: sonnet-heavy
-    }
+      const cfg = config.read();
+      floor = cfg.model_floor;
+      if (preference == null) preference = cfg.routing_preference;
+    } catch {}
   }
+  if (!MODEL_ORDER.includes(floor)) floor = 'sonnet';
+  if (preference == null) preference = 35;
 
   // If a custom rule supplied an explicit model override, honour it directly
   if (customModel && MODEL_ORDER.includes(customModel)) {
     return {
       model: customModel,
-      preference,
+      model_floor: floor,
       fallbackChain: customModel === 'haiku' ? ['haiku', 'sonnet', 'opus']
         : customModel === 'sonnet' ? ['sonnet', 'opus']
         : ['opus'],
@@ -275,7 +276,7 @@ function recommendModel(classification, opts = {}) {
   let model = base.model;
   const reasons = [base.reason];
 
-  // ── A/B experiment override: if an experiment is running for this family, use its assigned model ──
+  // ── A/B experiment override ──
   try {
     const { getActiveExperiment, assignModel } = require('./experiments');
     const exp = getActiveExperiment(family);
@@ -284,10 +285,9 @@ function recommendModel(classification, opts = {}) {
       if (experimentModel) {
         model = experimentModel;
         reasons.push(`[experiment] ${exp.id} (${exp.family}) -- assigned ${experimentModel} (${exp.count + 1}/${exp.target})`);
-        // Skip preference and learning adjustments when experiment is active
         return {
           model,
-          preference,
+          model_floor: floor,
           fallbackChain: model === 'haiku' ? ['haiku', 'sonnet', 'opus']
             : model === 'sonnet' ? ['sonnet', 'opus']
             : ['opus'],
@@ -297,41 +297,51 @@ function recommendModel(classification, opts = {}) {
         };
       }
     }
-  } catch {
-    // Experiments module not available -- skip
-  }
+  } catch {}
 
-  // Apply preference adjustment
-  if (preference <= 25 && !OPUS_FLOOR.has(family)) {
-    // Max savings: downgrade opus->sonnet, sonnet->haiku where safe
-    if (model === 'opus') {
-      model = 'sonnet';
-      reasons.push(`preference ${preference}/100 (max savings) -- downgraded from opus`);
-    } else if (model === 'sonnet' && complexity === 'low') {
-      model = 'haiku';
-      reasons.push(`preference ${preference}/100 (max savings) -- downgraded from sonnet`);
-    }
-  } else if (preference <= 50 && !OPUS_FLOOR.has(family)) {
-    // Cost-conscious (default): downgrade opus->sonnet for medium-complexity
-    if (model === 'opus' && complexity !== 'high') {
-      model = 'sonnet';
-      reasons.push(`preference ${preference}/100 (cost-conscious) -- sonnet sufficient for medium ${family}`);
-    } else if (model === 'opus' && complexity === 'high' && family === TASK_FAMILIES.DEBUG) {
-      // Even high-complexity debug can be sonnet at low preference
-      model = 'sonnet';
-      reasons.push(`preference ${preference}/100 (cost-conscious) -- trying sonnet for debug first`);
-    }
-  } else if (preference >= 76) {
-    // Max quality: upgrade sonnet->opus for medium+ complexity
-    if (model === 'sonnet' && complexity !== 'low') {
+  // ── Apply model floor ──
+  const floorIdx = MODEL_ORDER.indexOf(floor);
+  const modelIdx = MODEL_ORDER.indexOf(model);
+
+  if (floor === 'opus') {
+    // Opus-first: everything runs on opus, no routing
+    if (model !== 'opus') {
+      reasons.push(`floor=opus -- upgraded from ${model}`);
       model = 'opus';
-      reasons.push(`preference ${preference}/100 (max quality) -- upgraded to opus for ${complexity} ${family}`);
+    }
+  } else if (floor === 'haiku') {
+    // Haiku-first: aggressively downgrade unless task genuinely needs more
+    if (!OPUS_FLOOR.has(family)) {
+      if (model === 'opus' && complexity !== 'high') {
+        model = 'sonnet';
+        reasons.push('floor=haiku -- downgraded opus to sonnet (not high complexity)');
+      }
+      if (model === 'opus' && complexity === 'high' && family === TASK_FAMILIES.DEBUG) {
+        model = 'sonnet';
+        reasons.push('floor=haiku -- trying sonnet for debug first');
+      }
+      if (model === 'sonnet' && complexity === 'low') {
+        model = 'haiku';
+        reasons.push('floor=haiku -- downgraded to haiku (low complexity)');
+      }
+      // Medium-complexity sonnet tasks stay on sonnet even with haiku floor
+    }
+  } else {
+    // Sonnet-first (default): downgrade opus for non-high-complexity
+    if (!OPUS_FLOOR.has(family)) {
+      if (model === 'opus' && complexity !== 'high') {
+        model = 'sonnet';
+        reasons.push(`floor=sonnet -- sonnet sufficient for ${complexity} ${family}`);
+      }
+      if (model === 'opus' && complexity === 'high' && family === TASK_FAMILIES.DEBUG) {
+        model = 'sonnet';
+        reasons.push('floor=sonnet -- trying sonnet for debug first');
+      }
     }
   }
-  // 51-75: balanced -- use base recommendation as-is
 
   // ── Adaptive learning: adjust based on historical success rates ──
-  if (!OPUS_FLOOR.has(family)) {
+  if (!OPUS_FLOOR.has(family) && floor !== 'opus') {
     try {
       const { getAdjustment } = require('./learner');
       const adj = getAdjustment(family, model);
@@ -339,21 +349,17 @@ function recommendModel(classification, opts = {}) {
         if (adj.suggestion === 'upgrade' && adj.upgradeTo) {
           model = adj.upgradeTo;
           reasons.push(`[learned] ${adj.reason}`);
-        } else if (adj.suggestion === 'downgrade' && adj.downgradeTo && preference <= 50) {
-          // Only apply downgrades when user preference is cost-conscious
+        } else if (adj.suggestion === 'downgrade' && adj.downgradeTo && floor !== 'opus') {
           model = adj.downgradeTo;
           reasons.push(`[learned] ${adj.reason}`);
         }
-        // 'confirm' -- no change, but we could log it
       }
-    } catch {
-      // Learner not available -- skip
-    }
+    } catch {}
   }
 
   return {
     model,
-    preference,
+    model_floor: floor,
     fallbackChain: model === 'haiku' ? ['haiku', 'sonnet', 'opus']
       : model === 'sonnet' ? ['sonnet', 'opus']
       : ['opus'],

@@ -320,15 +320,15 @@ function readSessionTokenUsage(dateStr) {
   };
 
   function getTier(model) {
-    if (!model) return 'opus';
+    if (!model) return 'unknown';
     if (model.includes('opus')) return 'opus';
     if (model.includes('sonnet')) return 'sonnet';
     if (model.includes('haiku')) return 'haiku';
-    return 'opus';
+    return 'unknown';
   }
 
   function calcCost(tier, tokens) {
-    const p = pricing[tier] || pricing.opus;
+    const p = pricing[tier] || pricing.opus; // unknown models billed at opus rate (safe assumption)
     const m = 1_000_000;
     return (tokens.input / m * p.input) +
            (tokens.output / m * p.output) +
@@ -336,14 +336,18 @@ function readSessionTokenUsage(dateStr) {
            (tokens.cacheWrite / m * p.cacheWrite);
   }
 
-  // Convert Date to local YYYY-MM-DD string
-  function toLocalDate(d) {
+  // Convert a UTC ISO timestamp string to local YYYY-MM-DD
+  function utcToLocalDate(isoStr) {
+    const d = new Date(isoStr);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
-  // Recursively find all .jsonl files under projects dir, filtered by mtime
+  // Recursively find all .jsonl files under projects dir.
+  // We no longer filter by mtime — instead we rely on per-message timestamp filtering.
+  // Only skip files that haven't been modified in 7+ days to avoid scanning ancient files.
   function findJsonlFiles(dir, project, sessionId) {
     const results = [];
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days ago
     let entries;
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return results; }
     for (const entry of entries) {
@@ -355,11 +359,10 @@ function readSessionTokenUsage(dateStr) {
       } else if (entry.name.endsWith('.jsonl')) {
         try {
           const fstat = fs.statSync(fp);
-          if (toLocalDate(fstat.mtime) >= targetDate) {
-            // For main session files, sessionId is the filename; for subagents, use parent session
-            const sid = sessionId || entry.name.replace('.jsonl', '');
-            results.push({ path: fp, sessionId: sid, project });
-          }
+          // Skip files not touched in 7 days — they can't have today's messages
+          if (fstat.mtimeMs < cutoff) continue;
+          const sid = sessionId || entry.name.replace('.jsonl', '');
+          results.push({ path: fp, sessionId: sid, project });
         } catch { /* skip */ }
       }
     }
@@ -390,10 +393,10 @@ function readSessionTokenUsage(dateStr) {
       try { msg = JSON.parse(line); } catch { continue; }
       if (!msg.message?.usage) continue;
 
-      // Filter by timestamp if available
+      // Filter by timestamp — convert UTC timestamp to local date for accurate comparison
       if (msg.timestamp) {
-        const msgDate = msg.timestamp.slice(0, 10);
-        if (msgDate < targetDate) continue;
+        const msgLocalDate = utcToLocalDate(msg.timestamp);
+        if (msgLocalDate !== targetDate) continue;
       }
 
       const u = msg.message.usage;
