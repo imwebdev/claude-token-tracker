@@ -454,7 +454,7 @@ function buildHTML() {
     <div class="g2 anim d2" style="height:560px">
       <div class="card" style="display:flex;flex-direction:column;min-height:0">
         <div class="card-hd">
-          <h2>Routing timeline</h2>
+          <h2>Routing decisions</h2>
           <span class="ct" id="v-total">${r.totalTasks} total</span>
         </div>
         <div id="v-rd-strip" style="display:flex;gap:8px 14px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--dim)">${renderRoutingStrip(D.routingEvents)}</div>
@@ -672,17 +672,24 @@ function renderTimeline(tab) {
     const baseTier = baseModel ? (tier[baseModel] ?? 1) : finalTier;
 
     if (t.isSubagent) {
+      // Subagent: opus delegated this to a cheaper model
       badge = '<span class="tl-badge tl-badge-down">subagent</span>';
-      const saved = (promptCost[baseModel] || 0) - (promptCost[finalModel] || 0);
-      if (saved > 0) savings = `<span class="tl-saved">saved ~$${saved.toFixed(2)}</span>`;
+      const saved = (promptCost[baseModel] || promptCost.opus) - (promptCost[finalModel] || 0);
+      if (saved > 0) savings = `<span class="tl-saved">~$${saved.toFixed(2)} saved</span>`;
     } else if (baseModel && baseTier > finalTier) {
-      badge = `<span class="tl-badge tl-badge-down">↓ saved from ${baseModel}</span>`;
+      // Router downgraded: base was more expensive than final
+      badge = `<span class="tl-badge tl-badge-down">↓ routed from ${baseModel}</span>`;
       const saved = (promptCost[baseModel] || 0) - (promptCost[finalModel] || 0);
       if (saved > 0) savings = `<span class="tl-saved">~$${saved.toFixed(2)} saved</span>`;
     } else if (baseModel && baseTier < finalTier) {
+      // Router upgraded: task needed more capability
       badge = `<span class="tl-badge tl-badge-up">↑ upgraded from ${baseModel}</span>`;
+    } else if (baseModel && baseTier === finalTier) {
+      // Base matched final — no change needed
+      badge = `<span class="tl-badge tl-badge-stay">no change</span>`;
     } else {
-      badge = '<span class="tl-badge tl-badge-stay">stayed at floor</span>';
+      // No baseModel data (older events) — just show the recommendation
+      badge = `<span class="tl-badge tl-badge-stay">recommended</span>`;
     }
 
     return `<div class="tl-row">
@@ -765,14 +772,17 @@ function renderTokenHogs(hogs) {
 function renderRoutingStrip(re) {
   if (!re?.stats) return '';
   const s = re.stats, rec = s.byRecommended || {};
-  // Estimate savings: count how many tasks were downgraded from opus
-  const downgraded = (rec.haiku || 0) + (rec.sonnet || 0);
-  const savedEst = downgraded > 0 ? (downgraded * 0.07).toFixed(2) : '0.00'; // ~$0.07 avg savings per downgrade
-  return `<span><strong style="font-family:var(--mono)">${s.total||0}</strong> tasks routed</span>
-    <span><strong style="font-family:var(--mono)">${rec.opus||0}</strong> on opus</span>
-    <span><strong style="font-family:var(--mono)">${rec.sonnet||0}</strong> on sonnet</span>
-    <span><strong style="font-family:var(--mono)">${rec.haiku||0}</strong> on haiku</span>
-    <span style="color:#16a34a;font-weight:600">~$${savedEst} estimated savings</span>`;
+  const bm = DATA?.todayTokenUsage?.byModel || {};
+  const actualOpus = bm.opus?.calls || 0;
+  const actualSonnet = bm.sonnet?.calls || 0;
+  const actualHaiku = bm.haiku?.calls || 0;
+  const routed = (rec.sonnet || 0) + (rec.haiku || 0);
+  return `<span style="font-weight:600;color:var(--muted)">Actual API calls:</span>
+    <span><strong style="font-family:var(--mono)">${actualOpus}</strong> opus</span>
+    <span><strong style="font-family:var(--mono)">${actualSonnet}</strong> sonnet</span>
+    <span><strong style="font-family:var(--mono)">${actualHaiku}</strong> haiku</span>
+    <span style="color:var(--dim)">&middot;</span>
+    <span><strong style="font-family:var(--mono)">${routed}</strong> routed to cheaper models</span>`;
 }
 
 function renderProjectFilters(sc) {
