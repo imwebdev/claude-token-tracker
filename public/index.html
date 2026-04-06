@@ -178,7 +178,7 @@
   }
   .floor-btn {
     flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
-    background: var(--card); cursor: pointer; text-align: left; font-family: inherit;
+    background: var(--card); color: var(--fg); cursor: pointer; text-align: left; font-family: inherit;
     transition: border-color 200ms, background 200ms;
   }
   .floor-btn:hover { border-color: var(--dim); }
@@ -186,10 +186,10 @@
     border-color: var(--accent); background: var(--accent-dim);
   }
   .floor-btn strong {
-    display: block; font-size: 13px; font-weight: 600; margin-bottom: 2px;
+    display: block; font-size: 13px; font-weight: 600; margin-bottom: 2px; color: var(--fg);
   }
   .floor-btn span {
-    font-size: 11px; color: var(--dim); line-height: 1.4;
+    font-size: 11px; color: var(--muted); line-height: 1.4;
   }
   @media (max-width: 640px) { .floor-row { flex-direction: column; } }
   .floor-warn {
