@@ -34,6 +34,19 @@ No `npm install` needed. Zero dependencies. Seriously — zero.
 
 **Then restart Claude Code** (exit completely and relaunch). Hooks do not take effect until you restart.
 
+---
+
+## Update
+
+When a new version is released, run this from the repo folder:
+
+```bash
+cd claude-token-tracker
+node bin/cli.js update
+```
+
+This pulls the latest code and restarts the dashboard. No reinstall needed.
+
 Verify everything is working:
 
 ```bash
