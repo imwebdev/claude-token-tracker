@@ -206,7 +206,7 @@
   .tl-meta { display: flex; gap: 8px; margin-top: 2px; align-items: center; }
   .tl-proj { font-size: 11px; color: var(--dim); font-weight: 500; }
   .tl-sz { font-family: var(--mono); font-size: 10px; color: var(--dim); }
-  .deleg-arrow { color: var(--dim); font-size: 11px; margin: 0 2px; }
+  .deleg-hint { color: var(--dim); font-size: 10px; margin-left: 4px; font-weight: 400; font-family: inherit; }
 
   /* ─── Insights ───────────────────────────── */
   .ins-item {
@@ -523,8 +523,8 @@ function renderTimeline(tab) {
     const time = t.timestamp.slice(11, 16);
     let ml;
     if (isDel) {
-      const [src, tgt] = t.model.split('>');
-      ml = modelLabel(src) + '<span class="deleg-arrow">&rarr;</span>' + modelLabel(tgt);
+      const [, tgt] = t.model.split('>');
+      ml = modelLabel(tgt) + '<span class="deleg-hint">subagent</span>';
     } else {
       ml = modelLabel(t.model);
     }
@@ -613,8 +613,8 @@ function renderRoutingStrip(re) {
     <span><strong style="font-family:var(--mono)">${rec.haiku||0}</strong> haiku</span>
     <span><strong style="font-family:var(--mono)">${rec.sonnet||0}</strong> sonnet</span>
     <span><strong style="font-family:var(--mono)">${rec.opus||0}</strong> opus</span>
-    <span><strong style="font-family:var(--mono)">${s.delegated||0}</strong> dispatched</span>
-    <span><strong style="font-family:var(--mono)">${s.delegationRate||0}%</strong> delegation</span>`;
+    <span><strong style="font-family:var(--mono)">${s.delegated||0}</strong> sent to subagents</span>
+    <span><strong style="font-family:var(--mono)">${s.delegationRate||0}%</strong> routed cheaper</span>`;
 }
 
 function renderSessionCosts(sc) {
