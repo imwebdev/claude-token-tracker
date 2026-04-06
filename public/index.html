@@ -209,16 +209,40 @@
   .deleg-arrow { color: var(--dim); font-size: 11px; margin: 0 2px; }
 
   /* ─── Insights ───────────────────────────── */
-  .ins-item { padding: 10px 0; border-bottom: 1px solid var(--separator); }
-  .ins-item:last-child { border-bottom: none; }
-  .ins-title { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
-  .ins-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .ins-item {
+    padding: 10px 12px; margin-bottom: 8px; border-radius: 6px;
+    border-left: 3px solid var(--border); background: transparent;
+  }
+  .ins-item:last-child { margin-bottom: 0; }
+  .ins-item-crit {
+    border-left-color: var(--danger); background: var(--danger-dim);
+  }
+  .ins-item-warn {
+    border-left-color: var(--accent); background: var(--accent-dim);
+  }
+  .ins-item-ok {
+    border-left-color: #16a34a; background: rgba(22, 163, 74, 0.06);
+  }
+  [data-theme="dark"] .ins-item-ok { background: rgba(22, 163, 74, 0.08); }
+  .ins-item-info {
+    border-left-color: var(--dim); background: transparent;
+  }
+  .ins-title { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+  .ins-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .ins-dot-crit { background: var(--danger); }
   .ins-dot-warn { background: var(--accent); }
   .ins-dot-info { background: var(--dim); }
   .ins-dot-ok { background: #16a34a; }
-  .ins-detail { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 4px; }
-  .ins-action { font-size: 12px; color: var(--accent); }
+  .ins-detail { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
+  .ins-action {
+    display: inline-block; font-size: 11px; font-weight: 500;
+    color: var(--accent); background: var(--accent-dim);
+    padding: 3px 10px; border-radius: 4px;
+    line-height: 1.4;
+  }
+  .ins-item-crit .ins-action {
+    color: var(--danger); background: var(--danger-dim);
+  }
 
   /* ─── Hour grid ──────────────────────────── */
   .hr-grid { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
@@ -676,10 +700,11 @@ function renderInsights(insights) {
   let html = '';
   for (const i of live) {
     const dot = i.severity === 'critical' ? 'crit' : i.severity === 'warning' ? 'warn' : i.severity === 'success' ? 'ok' : 'info';
-    html += `<div class="ins-item">
+    const card = i.severity === 'critical' ? 'crit' : i.severity === 'warning' ? 'warn' : i.severity === 'success' ? 'ok' : 'info';
+    html += `<div class="ins-item ins-item-${card}">
       <div class="ins-title"><span class="ins-dot ins-dot-${dot}"></span>${esc(i.title)}</div>
       <div class="ins-detail">${esc(i.detail)}</div>
-      <div class="ins-action">&rarr; ${esc(i.action)}</div>
+      <div class="ins-action">${esc(i.action)}</div>
     </div>`;
   }
   if (hist.length) {
@@ -687,10 +712,10 @@ function renderInsights(insights) {
       <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="font-size:11px;color:var(--dim);background:none;border:1px solid var(--border);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:inherit">${hist.length} historical</button>
       <div style="display:none">`;
     for (const i of hist) {
-      html += `<div class="ins-item" style="opacity:0.6">
+      html += `<div class="ins-item ins-item-info" style="opacity:0.6">
         <div class="ins-title"><span class="ins-dot ins-dot-info"></span>${esc(i.title)}</div>
         <div class="ins-detail">${esc(i.detail)}</div>
-        <div class="ins-action">&rarr; ${esc(i.action)}</div>
+        <div class="ins-action">${esc(i.action)}</div>
       </div>`;
     }
     html += '</div></div>';
