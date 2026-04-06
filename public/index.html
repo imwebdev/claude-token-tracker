@@ -457,6 +457,7 @@ function buildHTML() {
           <h2>Routing decisions</h2>
           <span class="ct" id="v-total">${r.totalTasks} total</span>
         </div>
+        <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.5">Each time you send a prompt, Token Coach decides whether to use a cheaper model instead of opus. This log shows those decisions — your main session runs on opus separately.</div>
         <div id="v-rd-strip" style="display:flex;gap:8px 14px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--dim)">${renderRoutingStrip(D.routingEvents)}</div>
         <div class="tabs" role="tablist" aria-label="Timeline time range">
           <button class="tab ${tab==='today'?'on':''}" onclick="setTab('today')" id="v-tab-today" role="tab" aria-selected="${tab==='today'}" aria-controls="v-timeline">Today (${today.totalTasks})</button>
