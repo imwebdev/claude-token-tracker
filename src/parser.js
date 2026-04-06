@@ -297,6 +297,140 @@ function analyzeRouting(taskLog) {
   return routing;
 }
 
+/**
+ * Read actual token usage from Claude Code session JSONL files.
+ * Parses assistant messages with usage data, filtered by date.
+ * Returns { byModel: { [model]: { input, output, cacheRead, cacheWrite } }, bySession: { [sid]: ... } }
+ */
+function readSessionTokenUsage(dateStr) {
+  const projectsDir = path.join(CLAUDE_DIR, 'projects');
+  if (!fs.existsSync(projectsDir)) return { byModel: {}, bySession: {}, totalCost: 0 };
+
+  const now = new Date();
+  const targetDate = dateStr || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const byModel = {};
+  const bySession = {};
+  let totalCost = 0;
+
+  // Pricing per million tokens
+  const pricing = {
+    opus:   { input: 15.00, output: 75.00, cacheRead: 1.50, cacheWrite: 18.75 },
+    sonnet: { input: 3.00,  output: 15.00, cacheRead: 0.30, cacheWrite: 3.75 },
+    haiku:  { input: 1.00,  output: 5.00,  cacheRead: 0.10, cacheWrite: 1.25 },
+  };
+
+  function getTier(model) {
+    if (!model) return 'opus';
+    if (model.includes('opus')) return 'opus';
+    if (model.includes('sonnet')) return 'sonnet';
+    if (model.includes('haiku')) return 'haiku';
+    return 'opus';
+  }
+
+  function calcCost(tier, tokens) {
+    const p = pricing[tier] || pricing.opus;
+    const m = 1_000_000;
+    return (tokens.input / m * p.input) +
+           (tokens.output / m * p.output) +
+           (tokens.cacheRead / m * p.cacheRead) +
+           (tokens.cacheWrite / m * p.cacheWrite);
+  }
+
+  // Convert Date to local YYYY-MM-DD string
+  function toLocalDate(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // Recursively find all .jsonl files under projects dir, filtered by mtime
+  function findJsonlFiles(dir, project, sessionId) {
+    const results = [];
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return results; }
+    for (const entry of entries) {
+      const fp = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        // Derive session ID from UUID-shaped directory names
+        const sid = /^[0-9a-f]{8}-/.test(entry.name) ? entry.name : sessionId;
+        results.push(...findJsonlFiles(fp, project, sid));
+      } else if (entry.name.endsWith('.jsonl')) {
+        try {
+          const fstat = fs.statSync(fp);
+          if (toLocalDate(fstat.mtime) >= targetDate) {
+            // For main session files, sessionId is the filename; for subagents, use parent session
+            const sid = sessionId || entry.name.replace('.jsonl', '');
+            results.push({ path: fp, sessionId: sid, project });
+          }
+        } catch { /* skip */ }
+      }
+    }
+    return results;
+  }
+
+  let sessionFiles;
+  try {
+    sessionFiles = [];
+    for (const proj of fs.readdirSync(projectsDir)) {
+      const projDir = path.join(projectsDir, proj);
+      try {
+        if (!fs.statSync(projDir).isDirectory()) continue;
+      } catch { continue; }
+      sessionFiles.push(...findJsonlFiles(projDir, proj, null));
+    }
+  } catch {
+    return { byModel: {}, bySession: {}, totalCost: 0 };
+  }
+
+  for (const sf of sessionFiles) {
+    let content;
+    try { content = fs.readFileSync(sf.path, 'utf-8'); } catch { continue; }
+    const lines = content.trim().split('\n');
+
+    for (const line of lines) {
+      let msg;
+      try { msg = JSON.parse(line); } catch { continue; }
+      if (!msg.message?.usage) continue;
+
+      // Filter by timestamp if available
+      if (msg.timestamp) {
+        const msgDate = msg.timestamp.slice(0, 10);
+        if (msgDate < targetDate) continue;
+      }
+
+      const u = msg.message.usage;
+      const model = msg.message.model || 'unknown';
+      const tier = getTier(model);
+
+      const tokens = {
+        input: u.input_tokens || 0,
+        output: u.output_tokens || 0,
+        cacheRead: u.cache_read_input_tokens || 0,
+        cacheWrite: u.cache_creation_input_tokens || 0,
+      };
+
+      // Aggregate by model tier
+      if (!byModel[tier]) byModel[tier] = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, calls: 0 };
+      byModel[tier].input += tokens.input;
+      byModel[tier].output += tokens.output;
+      byModel[tier].cacheRead += tokens.cacheRead;
+      byModel[tier].cacheWrite += tokens.cacheWrite;
+      byModel[tier].calls++;
+
+      const cost = calcCost(tier, tokens);
+      byModel[tier].cost += cost;
+      totalCost += cost;
+
+      // Aggregate by session
+      const sid = sf.sessionId;
+      if (!bySession[sid]) bySession[sid] = { cost: 0, calls: 0, models: {}, project: sf.project };
+      bySession[sid].cost += cost;
+      bySession[sid].calls++;
+      bySession[sid].models[tier] = (bySession[sid].models[tier] || 0) + 1;
+    }
+  }
+
+  return { byModel, bySession, totalCost };
+}
+
 module.exports = {
   CLAUDE_DIR,
   readStatsCache,
@@ -311,4 +445,5 @@ module.exports = {
   analyzeRouting,
   readRuns,
   readBenchmarkSummary,
+  readSessionTokenUsage,
 };

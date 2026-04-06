@@ -263,7 +263,8 @@ function softRefresh() {
   setText('v-sonnet', today.models.sonnet || 0);
   setText('v-haiku', today.models.haiku || 0);
   setText('v-deleg', today.delegations);
-  setText('v-cost', '~$' + (D.sessionCosts ? Object.values(D.sessionCosts.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0).toFixed(2) : '0.00'));
+  const todayCost = D.todayTokenUsage ? D.todayTokenUsage.totalCost : (D.sessionCosts ? Object.values(D.sessionCosts.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0) : 0);
+  setText('v-cost', '$' + todayCost.toFixed(2));
   setText('v-total', r.totalTasks + ' total');
   setText('v-tab-today', 'Today (' + today.totalTasks + ')');
   setSection('v-timeline', renderTimeline(tab));
@@ -305,7 +306,7 @@ function getEffectiveTab() {
 function buildHTML() {
   const D = DATA; if (!D) return '';
   const s = D.stats, r = D.routing, today = r.todayStats, tab = getEffectiveTab(), isDark = getTheme() === 'dark';
-  const totalCost = Object.values(D.sessionCosts?.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0);
+  const totalCost = D.todayTokenUsage ? D.todayTokenUsage.totalCost : Object.values(D.sessionCosts?.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0);
 
   return `
     <header class="hdr anim" role="banner">
@@ -323,7 +324,7 @@ function buildHTML() {
       <div class="metric"><span class="metric-val" id="v-sonnet">${today.models.sonnet||0}</span><span class="metric-label">sonnet</span></div>
       <div class="metric"><span class="metric-val" id="v-haiku">${today.models.haiku||0}</span><span class="metric-label">haiku</span></div>
       <div class="metric"><span class="metric-val" id="v-deleg">${today.delegations}</span><span class="metric-label">delegated</span></div>
-      <div class="metric metric-accent"><span class="metric-val" id="v-cost">~$${totalCost.toFixed(2)}</span><span class="metric-label">est. today</span></div>
+      <div class="metric metric-accent"><span class="metric-val" id="v-cost">$${totalCost.toFixed(2)}</span><span class="metric-label">cost today</span></div>
     </div>
 
     </section>
@@ -533,8 +534,8 @@ function renderSessionCosts(sc) {
   for (const [, s] of entries) { totalCost += s.estimatedCost; totalPrompts += s.prompts; }
 
   let html = `<div class="sc-summary">
-    <div><div class="sc-stat-val" style="color:var(--accent)">~$${totalCost.toFixed(2)}</div><div class="sc-stat-label">est. cost</div></div>
-    <div><div class="sc-stat-val">${totalPrompts}</div><div class="sc-stat-label">prompts</div></div>
+    <div><div class="sc-stat-val" style="color:var(--accent)">$${totalCost.toFixed(2)}</div><div class="sc-stat-label">cost today</div></div>
+    <div><div class="sc-stat-val">${totalPrompts}</div><div class="sc-stat-label">API calls</div></div>
     <div><div class="sc-stat-val">${entries.length}</div><div class="sc-stat-label">sessions</div></div>
   </div>`;
 
@@ -548,7 +549,7 @@ function renderSessionCosts(sc) {
         <div style="margin-top:2px">${models}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-family:var(--mono);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">~$${s.estimatedCost.toFixed(2)}</div>
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">$${s.estimatedCost.toFixed(2)}</div>
         <div style="font-size:11px;color:var(--dim)">${s.prompts} prompts &middot; ${time}</div>
       </div>
     </div>`;

@@ -269,8 +269,10 @@ function buildDashboardData() {
       stats: routingStats,
       recent: recentEvents.slice(-100).reverse(),
     },
-    // Per-session cost tracking
+    // Per-session cost tracking (now using real token data from session files)
     sessionCosts: events.getSessionCosts(),
+    // Real token usage from Claude Code session files
+    todayTokenUsage: parser.readSessionTokenUsage(),
     // Adaptive learning stats
     learning: getLearningStats(),
     // Token hog analysis
