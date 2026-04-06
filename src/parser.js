@@ -138,7 +138,7 @@ function getProjects(history) {
 }
 
 /** Detect enabled MCP servers from settings */
-function getMcpServers(globalSettings, projectSettings) {
+function getMcpServers(globalSettings, projectSettings, projectPath) {
   const servers = new Set();
   const disabled = new Set();
 
@@ -146,6 +146,7 @@ function getMcpServers(globalSettings, projectSettings) {
     projectSettings.disabledMcpServers.forEach(s => disabled.add(s));
   }
 
+  // Read from ~/.claude/config.json (legacy location)
   const configPath = path.join(CLAUDE_DIR, 'config.json');
   if (fs.existsSync(configPath)) {
     try {
@@ -156,6 +157,36 @@ function getMcpServers(globalSettings, projectSettings) {
         });
       }
     } catch {}
+  }
+
+  // Read from ~/.mcp.json (global MCP config, newer format)
+  const globalMcpPath = path.join(os.homedir(), '.mcp.json');
+  if (fs.existsSync(globalMcpPath)) {
+    try {
+      const mcpConfig = JSON.parse(fs.readFileSync(globalMcpPath, 'utf-8'));
+      const mcpServers = mcpConfig.mcpServers || mcpConfig;
+      if (typeof mcpServers === 'object') {
+        Object.keys(mcpServers).forEach(s => {
+          if (!disabled.has(s)) servers.add(s);
+        });
+      }
+    } catch {}
+  }
+
+  // Read from <project>/.mcp.json (per-project MCP config)
+  if (projectPath) {
+    const projectMcpPath = path.join(projectPath, '.mcp.json');
+    if (fs.existsSync(projectMcpPath)) {
+      try {
+        const mcpConfig = JSON.parse(fs.readFileSync(projectMcpPath, 'utf-8'));
+        const mcpServers = mcpConfig.mcpServers || mcpConfig;
+        if (typeof mcpServers === 'object') {
+          Object.keys(mcpServers).forEach(s => {
+            if (!disabled.has(s)) servers.add(s);
+          });
+        }
+      } catch {}
+    }
   }
 
   return { enabled: [...servers], disabled: [...disabled] };
@@ -297,6 +328,158 @@ function analyzeRouting(taskLog) {
   return routing;
 }
 
+/**
+ * Read actual token usage from Claude Code session JSONL files.
+ * Parses assistant messages with usage data, filtered by date.
+ * Returns { byModel: { [model]: { input, output, cacheRead, cacheWrite } }, bySession: { [sid]: ... } }
+ */
+function readSessionTokenUsage(dateStr) {
+  const projectsDir = path.join(CLAUDE_DIR, 'projects');
+  if (!fs.existsSync(projectsDir)) return { byModel: {}, bySession: {}, totalCost: 0 };
+
+  const now = new Date();
+  const targetDate = dateStr || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const byModel = {};
+  const bySession = {};
+  let totalCost = 0;
+  let latestTimestamp = '';
+  let latestSessionId = null;
+
+  // Pricing per million tokens
+  const pricing = {
+    opus:   { input: 15.00, output: 75.00, cacheRead: 1.50, cacheWrite: 18.75 },
+    sonnet: { input: 3.00,  output: 15.00, cacheRead: 0.30, cacheWrite: 3.75 },
+    haiku:  { input: 1.00,  output: 5.00,  cacheRead: 0.10, cacheWrite: 1.25 },
+  };
+
+  function getTier(model) {
+    if (!model) return 'unknown';
+    if (model.includes('opus')) return 'opus';
+    if (model.includes('sonnet')) return 'sonnet';
+    if (model.includes('haiku')) return 'haiku';
+    return 'unknown';
+  }
+
+  function calcCost(tier, tokens) {
+    const p = pricing[tier] || pricing.opus; // unknown models billed at opus rate (safe assumption)
+    const m = 1_000_000;
+    return (tokens.input / m * p.input) +
+           (tokens.output / m * p.output) +
+           (tokens.cacheRead / m * p.cacheRead) +
+           (tokens.cacheWrite / m * p.cacheWrite);
+  }
+
+  // Convert a UTC ISO timestamp string to local YYYY-MM-DD
+  function utcToLocalDate(isoStr) {
+    const d = new Date(isoStr);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // Recursively find all .jsonl files under projects dir.
+  // We no longer filter by mtime — instead we rely on per-message timestamp filtering.
+  // Only skip files that haven't been modified in 7+ days to avoid scanning ancient files.
+  function findJsonlFiles(dir, project, sessionId) {
+    const results = [];
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days ago
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return results; }
+    for (const entry of entries) {
+      const fp = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        // Derive session ID from UUID-shaped directory names
+        const sid = /^[0-9a-f]{8}-/.test(entry.name) ? entry.name : sessionId;
+        results.push(...findJsonlFiles(fp, project, sid));
+      } else if (entry.name.endsWith('.jsonl')) {
+        try {
+          const fstat = fs.statSync(fp);
+          // Skip files not touched in 7 days — they can't have today's messages
+          if (fstat.mtimeMs < cutoff) continue;
+          const sid = sessionId || entry.name.replace('.jsonl', '');
+          results.push({ path: fp, sessionId: sid, project });
+        } catch { /* skip */ }
+      }
+    }
+    return results;
+  }
+
+  let sessionFiles;
+  try {
+    sessionFiles = [];
+    for (const proj of fs.readdirSync(projectsDir)) {
+      const projDir = path.join(projectsDir, proj);
+      try {
+        if (!fs.statSync(projDir).isDirectory()) continue;
+      } catch { continue; }
+      sessionFiles.push(...findJsonlFiles(projDir, proj, null));
+    }
+  } catch {
+    return { byModel: {}, bySession: {}, totalCost: 0 };
+  }
+
+  for (const sf of sessionFiles) {
+    let content;
+    try { content = fs.readFileSync(sf.path, 'utf-8'); } catch { continue; }
+    const lines = content.trim().split('\n');
+
+    for (const line of lines) {
+      let msg;
+      try { msg = JSON.parse(line); } catch { continue; }
+      if (!msg.message?.usage) continue;
+
+      // Filter by timestamp — convert UTC timestamp to local date for accurate comparison
+      if (msg.timestamp) {
+        const msgLocalDate = utcToLocalDate(msg.timestamp);
+        if (msgLocalDate !== targetDate) continue;
+      }
+
+      const u = msg.message.usage;
+      const model = msg.message.model || 'unknown';
+      const tier = getTier(model);
+
+      const tokens = {
+        input: u.input_tokens || 0,
+        output: u.output_tokens || 0,
+        cacheRead: u.cache_read_input_tokens || 0,
+        cacheWrite: u.cache_creation_input_tokens || 0,
+      };
+
+      // Aggregate by model tier
+      if (!byModel[tier]) byModel[tier] = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, calls: 0 };
+      byModel[tier].input += tokens.input;
+      byModel[tier].output += tokens.output;
+      byModel[tier].cacheRead += tokens.cacheRead;
+      byModel[tier].cacheWrite += tokens.cacheWrite;
+      byModel[tier].calls++;
+
+      const cost = calcCost(tier, tokens);
+      byModel[tier].cost += cost;
+      totalCost += cost;
+
+      // Track most recent session
+      if (msg.timestamp && msg.timestamp > latestTimestamp) {
+        latestTimestamp = msg.timestamp;
+        latestSessionId = sf.sessionId;
+      }
+
+      // Aggregate by session
+      const sid = sf.sessionId;
+      if (!bySession[sid]) bySession[sid] = { cost: 0, calls: 0, models: {}, project: sf.project };
+      bySession[sid].cost += cost;
+      bySession[sid].calls++;
+      bySession[sid].models[tier] = (bySession[sid].models[tier] || 0) + 1;
+    }
+  }
+
+  // Determine the dominant model of the most recent session
+  let latestSessionModel = null;
+  if (latestSessionId && bySession[latestSessionId]) {
+    const models = bySession[latestSessionId].models;
+    latestSessionModel = Object.entries(models).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  }
+
+  return { byModel, bySession, totalCost, latestSessionModel };
+}
+
 module.exports = {
   CLAUDE_DIR,
   readStatsCache,
@@ -311,4 +494,5 @@ module.exports = {
   analyzeRouting,
   readRuns,
   readBenchmarkSummary,
+  readSessionTokenUsage,
 };

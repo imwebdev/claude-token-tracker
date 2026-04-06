@@ -196,12 +196,11 @@ function handleConfig(args) {
       console.log(`  ${k}: ${JSON.stringify(v)}${label}`);
     }
     console.log('\n  Set a value: claude-tokens config <key> <value>');
-    console.log('  Example: claude-tokens config routing_preference 20\n');
-    console.log('  Preference guide:');
-    console.log('    0-25:  Max savings — pushes work to haiku/sonnet aggressively');
-    console.log('    26-50: Cost-conscious (default 35) — sonnet-heavy, opus only for architecture');
-    console.log('    51-75: Balanced — opus for complex tasks');
-    console.log('    76-100: Max quality — opus for anything medium+\n');
+    console.log('  Example: claude-tokens config model_floor haiku\n');
+    console.log('  Model floor (starting model):');
+    console.log('    haiku  — Start everything on haiku, only upgrade when needed');
+    console.log('    sonnet — Start on sonnet (default), upgrade to opus for complex work');
+    console.log('    opus   — Everything runs on opus, no routing\n');
     return;
   }
 
@@ -234,16 +233,32 @@ function handleConfig(args) {
     return;
   }
 
-  // Validate routing_preference range
+  // Validate model_floor
+  if (key === 'model_floor') {
+    const valid = ['haiku', 'sonnet', 'opus'];
+    if (!valid.includes(value)) {
+      console.error(`  Error: model_floor must be one of: ${valid.join(', ')}`);
+      process.exit(1);
+    }
+    config.set('model_floor', value);
+    const labels = { haiku: 'haiku-first (max savings)', sonnet: 'sonnet-first (default)', opus: 'opus-first (no routing)' };
+    console.log(`\n  ✓ model_floor set to ${value} — ${labels[value]}\n`);
+    return;
+  }
+
+  // Legacy: routing_preference — map to model_floor
   if ((key === 'routing_preference' || key === '--preference') && typeof parsed === 'number') {
     if (parsed < 0 || parsed > 100) {
       console.error('  Error: routing_preference must be 0-100');
       process.exit(1);
     }
-    const k = 'routing_preference';
-    config.set(k, parsed);
+    config.set('routing_preference', parsed);
+    // Also set model_floor based on the preference
+    const floor = parsed <= 25 ? 'haiku' : parsed <= 75 ? 'sonnet' : 'opus';
+    config.set('model_floor', floor);
     const label = parsed <= 25 ? 'max savings' : parsed <= 50 ? 'cost-conscious' : parsed <= 75 ? 'balanced' : 'max quality';
-    console.log(`\n  ✓ ${k} set to ${parsed} (${label})\n`);
+    console.log(`\n  ✓ routing_preference set to ${parsed} (${label})`);
+    console.log(`  ✓ model_floor set to ${floor}\n`);
     return;
   }
 

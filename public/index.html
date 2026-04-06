@@ -147,6 +147,77 @@
   @media (max-width: 860px) { .g2 { grid-template-columns: 1fr; height: auto !important; } }
   @media (max-width: 640px) { .g2-eq { grid-template-columns: 1fr; } }
 
+  /* ─── Savings card ───────────────────────── */
+  .savings-hero {
+    display: flex; gap: 24px; align-items: baseline; margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .savings-big {
+    font-family: var(--mono); font-size: 28px; font-weight: 700;
+    color: #16a34a; font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  }
+  [data-theme="dark"] .savings-big { color: #4ade80; }
+  .savings-sub { font-size: 12px; color: var(--dim); }
+  .savings-sub strong { color: var(--muted); font-weight: 600; }
+  .savings-chart { width: 100%; height: 120px; }
+  .savings-legend {
+    display: flex; gap: 16px; margin-top: 8px; font-size: 11px; color: var(--dim);
+  }
+  .savings-legend span::before {
+    content: ''; display: inline-block; width: 10px; height: 3px;
+    border-radius: 2px; margin-right: 4px; vertical-align: 2px;
+  }
+  .savings-legend .leg-actual::before { background: var(--accent); }
+  .savings-legend .leg-counter::before { background: var(--dim); opacity: 0.4; }
+  .savings-legend .leg-saved::before { background: #16a34a; opacity: 0.3; }
+  [data-theme="dark"] .savings-legend .leg-saved::before { background: #4ade80; }
+
+  /* ─── Model floor selector ────────────────── */
+  .floor-row {
+    display: flex; gap: 8px; align-items: stretch;
+  }
+  .floor-btn {
+    flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--card); color: var(--fg); cursor: pointer; text-align: left; font-family: inherit;
+    transition: border-color 200ms, background 200ms;
+  }
+  .floor-btn:hover { border-color: var(--dim); }
+  .floor-btn.on {
+    border-color: var(--accent); background: var(--accent-dim);
+  }
+  .floor-btn strong {
+    display: block; font-size: 13px; font-weight: 600; margin-bottom: 2px; color: var(--fg);
+  }
+  .floor-btn span {
+    font-size: 11px; color: var(--muted); line-height: 1.4;
+  }
+  @media (max-width: 640px) { .floor-row { flex-direction: column; } }
+  .floor-warn {
+    margin-top: 10px; padding: 10px 12px; border-radius: 6px;
+    border-left: 3px solid var(--accent); background: var(--accent-dim);
+    font-size: 12px; color: var(--muted); line-height: 1.5;
+  }
+  .floor-warn strong { color: var(--fg); }
+  .floor-warn code {
+    font-family: var(--mono); font-size: 11px; background: var(--faint);
+    padding: 2px 6px; border-radius: 3px;
+  }
+
+  /* ─── Dark mode AAA contrast overrides (floor section) ── */
+  /* .floor-btn.on tints the card bg with accent-dim (~#161512); #a0a0a0 drops
+     to ~6.85:1 on that surface — below the 7:1 AAA threshold. Bump to #b2b2b2
+     which clears 7:1 on both the tinted active state and the plain card bg. */
+  [data-theme="dark"] .floor-btn.on span {
+    color: #b2b2b2;
+  }
+  /* .floor-warn code sits on var(--faint)=#262626. The inherited var(--muted)
+     (#a3a3a3) only achieves ~5.1:1 on that surface — fails AAA. Use a lighter
+     neutral that clears 7:1 on #262626 (needs ≥ #ababab; use #d0d0d0 for
+     comfortable margin). */
+  [data-theme="dark"] .floor-warn code {
+    color: #d0d0d0;
+  }
+
   /* ─── Model labels ───────────────────────── */
   .ml { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
   .ml-opus { font-weight: 700; color: var(--tier-high); }
@@ -179,25 +250,61 @@
   .tl-row:last-child { border-bottom: none; }
   .tl-time { font-family: var(--mono); font-size: 11px; color: var(--dim); width: 40px; flex-shrink: 0; padding-top: 2px; }
   .tl-time small { display: block; font-size: 10px; color: var(--dim); opacity: 0.6; }
-  .tl-model { flex-shrink: 0; min-width: 56px; padding-top: 2px; }
+  .tl-model { flex-shrink: 0; min-width: 140px; padding-top: 2px; }
   .tl-body { flex: 1; min-width: 0; }
   .tl-desc { font-size: 13px; color: var(--muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tl-meta { display: flex; gap: 8px; margin-top: 2px; align-items: center; }
   .tl-proj { font-size: 11px; color: var(--dim); font-weight: 500; }
   .tl-sz { font-family: var(--mono); font-size: 10px; color: var(--dim); }
-  .deleg-arrow { color: var(--dim); font-size: 11px; margin: 0 2px; }
+  .tl-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px;
+    margin-left: 4px; font-weight: 500; vertical-align: 1px; white-space: nowrap;
+  }
+  .tl-badge-down { color: #16a34a; background: rgba(22, 163, 74, 0.1); }
+  .tl-badge-up { color: var(--danger); background: var(--danger-dim); }
+  .tl-badge-stay { color: var(--dim); background: var(--separator); }
+  [data-theme="dark"] .tl-badge-down { color: #4ade80; background: rgba(22, 163, 74, 0.12); }
+  .tl-saved {
+    font-family: var(--mono); font-size: 11px; color: #16a34a; font-weight: 600;
+    margin-left: 8px; white-space: nowrap;
+  }
+  [data-theme="dark"] .tl-saved { color: #4ade80; }
 
   /* ─── Insights ───────────────────────────── */
-  .ins-item { padding: 10px 0; border-bottom: 1px solid var(--separator); }
-  .ins-item:last-child { border-bottom: none; }
-  .ins-title { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
-  .ins-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .ins-item {
+    padding: 10px 12px; margin-bottom: 8px; border-radius: 6px;
+    border-left: 3px solid var(--border); background: transparent;
+  }
+  .ins-item:last-child { margin-bottom: 0; }
+  .ins-item-crit {
+    border-left-color: var(--danger); background: var(--danger-dim);
+  }
+  .ins-item-warn {
+    border-left-color: var(--accent); background: var(--accent-dim);
+  }
+  .ins-item-ok {
+    border-left-color: #16a34a; background: rgba(22, 163, 74, 0.06);
+  }
+  [data-theme="dark"] .ins-item-ok { background: rgba(22, 163, 74, 0.08); }
+  .ins-item-info {
+    border-left-color: var(--dim); background: transparent;
+  }
+  .ins-title { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 3px; display: flex; align-items: center; gap: 6px; }
+  .ins-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
   .ins-dot-crit { background: var(--danger); }
   .ins-dot-warn { background: var(--accent); }
   .ins-dot-info { background: var(--dim); }
   .ins-dot-ok { background: #16a34a; }
-  .ins-detail { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 4px; }
-  .ins-action { font-size: 12px; color: var(--accent); }
+  .ins-detail { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
+  .ins-action {
+    display: inline-block; font-size: 11px; font-weight: 500;
+    color: var(--accent); background: var(--accent-dim);
+    padding: 3px 10px; border-radius: 4px;
+    line-height: 1.4;
+  }
+  .ins-item-crit .ins-action {
+    color: var(--danger); background: var(--danger-dim);
+  }
 
   /* ─── Hour grid ──────────────────────────── */
   .hr-grid { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
@@ -240,6 +347,18 @@
 let DATA = null;
 let activeFilter = 'all';
 let timelineTab = 'auto';
+let activeProject = 'all';
+
+/** Turn a path-based project slug into a clean display name */
+function cleanProject(slug) {
+  if (!slug) return 'unknown';
+  // Strip leading path segments like "-home-cchhita-"
+  const parts = slug.replace(/^-/, '').split('-');
+  // Find the last meaningful segment (skip home, username)
+  if (parts.length >= 3) return parts.slice(2).join('-');
+  if (parts.length === 2) return parts[1];
+  return slug;
+}
 
 function getTheme() { return localStorage.getItem('token-coach-theme') || 'dark'; }
 function setTheme(t) { localStorage.setItem('token-coach-theme', t); document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : ''); }
@@ -258,12 +377,14 @@ function setSection(id, html) {
 function softRefresh() {
   const D = DATA; if (!D) return;
   const s = D.stats, r = D.routing, today = r.todayStats, tab = getEffectiveTab();
-  setText('v-tasks', today.totalTasks);
-  setText('v-opus', today.models.opus || 0);
-  setText('v-sonnet', today.models.sonnet || 0);
-  setText('v-haiku', today.models.haiku || 0);
-  setText('v-deleg', today.delegations);
-  setText('v-cost', '~$' + (D.sessionCosts ? Object.values(D.sessionCosts.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0).toFixed(2) : '0.00'));
+  const bm = D.todayTokenUsage?.byModel || {};
+  setText('v-calls', (bm.opus?.calls||0) + (bm.sonnet?.calls||0) + (bm.haiku?.calls||0) + (bm.unknown?.calls||0));
+  setText('v-opus', bm.opus?.calls || 0);
+  setText('v-sonnet', bm.sonnet?.calls || 0);
+  setText('v-haiku', bm.haiku?.calls || 0);
+  setText('v-sessions', Object.keys(D.todayTokenUsage?.bySession || D.sessionCosts?.sessions || {}).length);
+  const todayCost = D.todayTokenUsage ? D.todayTokenUsage.totalCost : (D.sessionCosts ? Object.values(D.sessionCosts.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0) : 0);
+  setText('v-cost', '$' + todayCost.toFixed(2));
   setText('v-total', r.totalTasks + ' total');
   setText('v-tab-today', 'Today (' + today.totalTasks + ')');
   setSection('v-timeline', renderTimeline(tab));
@@ -305,7 +426,16 @@ function getEffectiveTab() {
 function buildHTML() {
   const D = DATA; if (!D) return '';
   const s = D.stats, r = D.routing, today = r.todayStats, tab = getEffectiveTab(), isDark = getTheme() === 'dark';
-  const totalCost = Object.values(D.sessionCosts?.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0);
+  const totalCost = D.todayTokenUsage ? D.todayTokenUsage.totalCost : Object.values(D.sessionCosts?.sessions||{}).reduce((a,s)=>a+s.estimatedCost,0);
+  // Actual model usage from session JSONL files (what really ran)
+  const bm = D.todayTokenUsage?.byModel || {};
+  const tu = {
+    opusCalls: (bm.opus?.calls||0),
+    sonnetCalls: (bm.sonnet?.calls||0),
+    haikuCalls: (bm.haiku?.calls||0),
+    totalCalls: (bm.opus?.calls||0) + (bm.sonnet?.calls||0) + (bm.haiku?.calls||0) + (bm.unknown?.calls||0),
+    sessionCount: Object.keys(D.todayTokenUsage?.bySession || D.sessionCosts?.sessions || {}).length,
+  };
 
   return `
     <header class="hdr anim" role="banner">
@@ -318,22 +448,43 @@ function buildHTML() {
 
     <main id="main-content">
     <section class="metrics anim d1" aria-label="Today's metrics">
-      <div class="metric"><span class="metric-val" id="v-tasks">${today.totalTasks}</span><span class="metric-label">tasks today</span></div>
-      <div class="metric"><span class="metric-val" id="v-opus">${today.models.opus||0}</span><span class="metric-label">opus</span></div>
-      <div class="metric"><span class="metric-val" id="v-sonnet">${today.models.sonnet||0}</span><span class="metric-label">sonnet</span></div>
-      <div class="metric"><span class="metric-val" id="v-haiku">${today.models.haiku||0}</span><span class="metric-label">haiku</span></div>
-      <div class="metric"><span class="metric-val" id="v-deleg">${today.delegations}</span><span class="metric-label">delegated</span></div>
-      <div class="metric metric-accent"><span class="metric-val" id="v-cost">~$${totalCost.toFixed(2)}</span><span class="metric-label">est. today</span></div>
+      <div class="metric"><span class="metric-val" id="v-calls">${tu.totalCalls||0}</span><span class="metric-label">API calls today</span></div>
+      <div class="metric"><span class="metric-val" id="v-opus">${tu.opusCalls||0}</span><span class="metric-label">opus calls</span></div>
+      <div class="metric"><span class="metric-val" id="v-sonnet">${tu.sonnetCalls||0}</span><span class="metric-label">sonnet calls</span></div>
+      <div class="metric"><span class="metric-val" id="v-haiku">${tu.haikuCalls||0}</span><span class="metric-label">haiku calls</span></div>
+      <div class="metric"><span class="metric-val" id="v-sessions">${tu.sessionCount||0}</span><span class="metric-label">sessions</span></div>
+      <div class="metric metric-accent"><span class="metric-val" id="v-cost">$${totalCost.toFixed(2)}</span><span class="metric-label">cost today</span></div>
     </div>
 
     </section>
 
+    <div class="card anim d1" style="margin-bottom:12px">
+      <div class="card-hd">
+        <h2>Did routing pay for itself?</h2>
+        <span class="ct" id="v-savings-pct">${D.savings?.today?.savingsPercent > 0 ? Math.round(D.savings.today.savingsPercent) + '% saved' : 'no savings yet'}</span>
+      </div>
+      <div id="v-savings-body">${renderSavings(D.savings)}</div>
+    </div>
+
+    <div class="card anim d1" style="margin-bottom:12px">
+      <div class="card-hd">
+        <h2>Model floor</h2>
+        <span class="ct" id="v-floor-label">${D.config?.model_floor || 'sonnet'}</span>
+      </div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.5">The model floor controls which model Token Coach recommends for subagent tasks. Your main session model is set when you start Claude Code.</div>
+      <div class="floor-row" id="v-floor-row">
+        ${renderFloorSelector(D.config?.model_floor || 'sonnet')}
+      </div>
+      <div id="v-floor-warning">${renderFloorWarning(D)}</div>
+    </div>
+
     <div class="g2 anim d2" style="height:560px">
       <div class="card" style="display:flex;flex-direction:column;min-height:0">
         <div class="card-hd">
-          <h2>Routing timeline</h2>
+          <h2>Routing decisions</h2>
           <span class="ct" id="v-total">${r.totalTasks} total</span>
         </div>
+        <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.5">Each time you send a prompt, Token Coach decides whether to use a cheaper model instead of opus. This log shows those decisions — your main session runs on opus separately.</div>
         <div id="v-rd-strip" style="display:flex;gap:8px 14px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:var(--dim)">${renderRoutingStrip(D.routingEvents)}</div>
         <div class="tabs" role="tablist" aria-label="Timeline time range">
           <button class="tab ${tab==='today'?'on':''}" onclick="setTab('today')" id="v-tab-today" role="tab" aria-selected="${tab==='today'}" aria-controls="v-timeline">Today (${today.totalTasks})</button>
@@ -366,6 +517,7 @@ function buildHTML() {
         <h2>Session costs</h2>
         <span class="ct" id="v-sc-ct">${Object.keys(D.sessionCosts?.sessions||{}).length} today</span>
       </div>
+      <div class="filters" id="v-sc-filters" role="toolbar" aria-label="Filter by project">${renderProjectFilters(D.sessionCosts)}</div>
       <div id="v-sc-body">${renderSessionCosts(D.sessionCosts)}</div>
     </div>
 
@@ -419,6 +571,115 @@ function render() {
 
 /* ─── Renderers ─────────────────────────────── */
 
+function renderSavings(savings) {
+  if (!savings) return '<div class="empty">No savings data yet.</div>';
+  const t = savings.today || {};
+  const daily = savings.daily || [];
+
+  // Cumulative savings
+  const cumSavings = daily.reduce((sum, d) => sum + (d.savings || 0), 0) + (t.savings || 0);
+  const todaySavings = t.savings || 0;
+
+  let html = `<div class="savings-hero">
+    <div>
+      <div class="savings-big">$${cumSavings.toFixed(2)}</div>
+      <div class="savings-sub">total saved vs all-opus</div>
+    </div>
+    <div>
+      <div class="savings-sub"><strong>$${todaySavings.toFixed(2)}</strong> saved today</div>
+      <div class="savings-sub"><strong>$${(t.actual || 0).toFixed(2)}</strong> actual &middot; <strong>$${(t.counterfactual || 0).toFixed(2)}</strong> if all opus</div>
+    </div>
+  </div>`;
+
+  // Build SVG chart — last 14 days + today
+  const chartData = [...daily];
+  const todayStr = new Date().toISOString().slice(0, 10);
+  // Add today if not already in daily
+  if (!chartData.length || chartData[chartData.length - 1].date !== todayStr) {
+    chartData.push({ date: todayStr, actual: Math.round((t.actual || 0) * 100) / 100, counterfactual: Math.round((t.counterfactual || 0) * 100) / 100, savings: Math.round(todaySavings * 100) / 100 });
+  }
+
+  if (chartData.length < 2) {
+    html += '<div class="savings-sub" style="margin-top:8px">Need at least 2 days of data for the chart.</div>';
+    return html;
+  }
+
+  const W = 600, H = 120, PAD = 28;
+  const maxVal = Math.max(...chartData.map(d => Math.max(d.actual, d.counterfactual)), 1);
+  const xStep = (W - PAD * 2) / (chartData.length - 1);
+
+  function y(val) { return H - PAD - ((val / maxVal) * (H - PAD * 2)); }
+
+  const actualPoints = chartData.map((d, i) => `${PAD + i * xStep},${y(d.actual)}`);
+  const counterPoints = chartData.map((d, i) => `${PAD + i * xStep},${y(d.counterfactual)}`);
+
+  // Shaded savings area (between the two lines)
+  const areaPath = `M${counterPoints[0]} ${counterPoints.map(p => `L${p}`).join(' ')} L${PAD + (chartData.length - 1) * xStep},${y(chartData[chartData.length - 1].actual)} ${[...actualPoints].reverse().map(p => `L${p}`).join(' ')} Z`;
+
+  // X-axis labels (show every few days)
+  const labelInterval = chartData.length <= 7 ? 1 : chartData.length <= 14 ? 2 : 3;
+  const xLabels = chartData.map((d, i) => {
+    if (i % labelInterval !== 0 && i !== chartData.length - 1) return '';
+    const label = d.date.slice(5); // MM-DD
+    return `<text x="${PAD + i * xStep}" y="${H - 4}" text-anchor="middle" fill="currentColor" opacity="0.4" font-size="9" font-family="var(--mono)">${label}</text>`;
+  }).join('');
+
+  // Y-axis: just max value
+  const yLabel = `<text x="${PAD - 4}" y="${PAD}" text-anchor="end" fill="currentColor" opacity="0.4" font-size="9" font-family="var(--mono)">$${maxVal.toFixed(0)}</text>`;
+
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const savedFill = isDark ? 'rgba(74, 222, 128, 0.12)' : 'rgba(22, 163, 74, 0.1)';
+  const accentStroke = isDark ? '#d4a843' : '#6d5000';
+  const dimStroke = isDark ? 'rgba(163,163,163,0.3)' : 'rgba(82,82,82,0.25)';
+
+  html += `<svg class="savings-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Savings chart: actual vs counterfactual cost over ${chartData.length} days">
+    <path d="${areaPath}" fill="${savedFill}" />
+    <polyline points="${counterPoints.join(' ')}" fill="none" stroke="${dimStroke}" stroke-width="1.5" stroke-dasharray="4,3" />
+    <polyline points="${actualPoints.join(' ')}" fill="none" stroke="${accentStroke}" stroke-width="2" />
+    ${xLabels}
+    ${yLabel}
+  </svg>`;
+
+  html += `<div class="savings-legend">
+    <span class="leg-actual">actual spend</span>
+    <span class="leg-counter">if all opus</span>
+    <span class="leg-saved">savings</span>
+  </div>`;
+
+  return html;
+}
+
+function renderFloorWarning(D) {
+  // Session model display removed — Claude Code's /config model selector doesn't reliably persist
+  return '';
+}
+
+function renderFloorSelector(current) {
+  const floors = [
+    { id: 'haiku', label: 'Haiku-first', desc: 'Start on haiku, only upgrade when needed' },
+    { id: 'sonnet', label: 'Sonnet-first', desc: 'Start on sonnet, upgrade to opus for complex work' },
+    { id: 'opus', label: 'Opus-first', desc: 'Everything runs on opus, no routing' },
+  ];
+  return floors.map(f =>
+    `<button class="floor-btn ${f.id === current ? 'on' : ''}" onclick="setFloor('${f.id}')" aria-pressed="${f.id === current}"><strong>${f.label}</strong><span>${f.desc}</span></button>`
+  ).join('');
+}
+
+function setFloor(floor) {
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_floor: floor }),
+  }).then(r => r.json()).then(cfg => {
+    if (DATA) DATA.config = cfg;
+    // Update UI without full re-render
+    const row = document.getElementById('v-floor-row');
+    if (row) row.innerHTML = renderFloorSelector(floor);
+    const label = document.getElementById('v-floor-label');
+    if (label) label.textContent = floor;
+  }).catch(() => {});
+}
+
 function renderTimeline(tab) {
   if (!DATA) return '';
   const r = DATA.routing;
@@ -426,21 +687,49 @@ function renderTimeline(tab) {
   if (activeFilter !== 'all') entries = entries.filter(t => t.model.includes(activeFilter));
   if (!entries.length) return `<div class="empty">${tab === 'today' ? 'No tasks today' : 'No matching tasks'}</div>`;
 
+  // Approximate cost per prompt by model (USD) — rough estimates for display
+  const promptCost = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
+
   return (tab === 'today' ? entries : entries.slice(0, 60)).map(t => {
-    const isDel = t.model.includes('>');
     const time = t.timestamp.slice(11, 16);
-    let ml;
-    if (isDel) {
-      const [src, tgt] = t.model.split('>');
-      ml = modelLabel(src) + '<span class="deleg-arrow">&rarr;</span>' + modelLabel(tgt);
+    // Handle legacy "opus>sonnet" format
+    const isDel = t.model.includes('>');
+    const finalModel = isDel ? t.model.split('>')[1] : t.model;
+    const baseModel = isDel ? t.model.split('>')[0] : (t.baseModel || null);
+
+    // Build the routing story
+    let badge = '';
+    let savings = '';
+    const tier = { haiku: 0, sonnet: 1, opus: 2 };
+    const finalTier = tier[finalModel] ?? 1;
+    const baseTier = baseModel ? (tier[baseModel] ?? 1) : finalTier;
+
+    if (t.isSubagent) {
+      // Subagent: opus delegated this to a cheaper model
+      badge = '<span class="tl-badge tl-badge-down">subagent</span>';
+      const saved = (promptCost[baseModel] || promptCost.opus) - (promptCost[finalModel] || 0);
+      if (saved > 0) savings = `<span class="tl-saved">~$${saved.toFixed(2)} saved</span>`;
+    } else if (baseModel && baseTier > finalTier) {
+      // Router downgraded: base was more expensive than final
+      badge = `<span class="tl-badge tl-badge-down">↓ routed from ${baseModel}</span>`;
+      const saved = (promptCost[baseModel] || 0) - (promptCost[finalModel] || 0);
+      if (saved > 0) savings = `<span class="tl-saved">~$${saved.toFixed(2)} saved</span>`;
+    } else if (baseModel && baseTier < finalTier) {
+      // Router upgraded: task needed more capability
+      badge = `<span class="tl-badge tl-badge-up">↑ upgraded from ${baseModel}</span>`;
+    } else if (baseModel && baseTier === finalTier) {
+      // Base matched final — no change needed
+      badge = `<span class="tl-badge tl-badge-stay">no change</span>`;
     } else {
-      ml = modelLabel(t.model);
+      // No baseModel data (older events) — just show the recommendation
+      badge = `<span class="tl-badge tl-badge-stay">recommended</span>`;
     }
+
     return `<div class="tl-row">
       <div class="tl-time">${time}${tab==='all'?`<small>${t.timestamp.slice(5,10)}</small>`:''}</div>
-      <div class="tl-model">${ml}</div>
+      <div class="tl-model">${modelLabel(finalModel)}${badge}</div>
       <div class="tl-body">
-        <div class="tl-desc">${esc(t.description)}</div>
+        <div class="tl-desc">${esc(t.description)}${savings}</div>
         <div class="tl-meta"><span class="tl-proj">${esc(t.project)}</span><span class="tl-sz">${t.size}</span></div>
       </div>
     </div>`;
@@ -516,27 +805,83 @@ function renderTokenHogs(hogs) {
 function renderRoutingStrip(re) {
   if (!re?.stats) return '';
   const s = re.stats, rec = s.byRecommended || {};
-  return `<span><strong style="font-family:var(--mono)">${s.total||0}</strong> classified</span>
-    <span><strong style="font-family:var(--mono)">${rec.haiku||0}</strong> haiku</span>
-    <span><strong style="font-family:var(--mono)">${rec.sonnet||0}</strong> sonnet</span>
-    <span><strong style="font-family:var(--mono)">${rec.opus||0}</strong> opus</span>
-    <span><strong style="font-family:var(--mono)">${s.delegated||0}</strong> dispatched</span>
-    <span><strong style="font-family:var(--mono)">${s.delegationRate||0}%</strong> delegation</span>`;
+  const bm = DATA?.todayTokenUsage?.byModel || {};
+  const actualOpus = bm.opus?.calls || 0;
+  const actualSonnet = bm.sonnet?.calls || 0;
+  const actualHaiku = bm.haiku?.calls || 0;
+  const routed = (rec.sonnet || 0) + (rec.haiku || 0);
+  return `<span style="font-weight:600;color:var(--muted)">Actual API calls:</span>
+    <span><strong style="font-family:var(--mono)">${actualOpus}</strong> opus</span>
+    <span><strong style="font-family:var(--mono)">${actualSonnet}</strong> sonnet</span>
+    <span><strong style="font-family:var(--mono)">${actualHaiku}</strong> haiku</span>
+    <span style="color:var(--dim)">&middot;</span>
+    <span><strong style="font-family:var(--mono)">${routed}</strong> routed to cheaper models</span>`;
+}
+
+function renderProjectFilters(sc) {
+  const sessions = sc?.sessions || {};
+  const projects = new Set();
+  for (const [, s] of Object.values(sessions).length ? Object.entries(sessions) : []) {
+    projects.add(s.project || 'unknown');
+  }
+  const sorted = [...projects].sort();
+  if (sorted.length <= 1) return ''; // No filter needed for 0-1 projects
+  let html = `<button class="flt ${activeProject==='all'?'on':''}" onclick="setProject('all')" aria-pressed="${activeProject==='all'}">all</button>`;
+  for (const p of sorted) {
+    const label = cleanProject(p);
+    html += `<button class="flt ${activeProject===p?'on':''}" onclick="setProject('${esc(p)}')" aria-pressed="${activeProject===p}">${esc(label)}</button>`;
+  }
+  return html;
+}
+
+function setProject(proj) {
+  activeProject = proj;
+  if (DATA) {
+    document.getElementById('v-sc-body').innerHTML = renderSessionCosts(DATA.sessionCosts);
+    document.getElementById('v-sc-filters').innerHTML = renderProjectFilters(DATA.sessionCosts);
+    // Update the count badge
+    const sessions = DATA.sessionCosts?.sessions || {};
+    const filtered = activeProject === 'all'
+      ? Object.keys(sessions).length
+      : Object.entries(sessions).filter(([, s]) => s.project === activeProject).length;
+    document.getElementById('v-sc-ct').textContent = filtered + ' sessions';
+  }
 }
 
 function renderSessionCosts(sc) {
   const sessions = sc?.sessions || {};
-  const entries = Object.entries(sessions).sort((a, b) => (b[1].lastActivity||'').localeCompare(a[1].lastActivity||''));
+  let entries = Object.entries(sessions).sort((a, b) => (b[1].lastActivity||'').localeCompare(a[1].lastActivity||''));
   if (!entries.length) return '<div class="empty">No session data yet.</div>';
 
+  // Apply project filter
+  if (activeProject !== 'all') {
+    entries = entries.filter(([, s]) => s.project === activeProject);
+    if (!entries.length) return '<div class="empty">No sessions for this project.</div>';
+  }
+
   let totalCost = 0, totalPrompts = 0;
-  for (const [, s] of entries) { totalCost += s.estimatedCost; totalPrompts += s.prompts; }
+  const modelTotals = {};
+  for (const [, s] of entries) {
+    totalCost += s.estimatedCost;
+    totalPrompts += s.prompts;
+    for (const [m, c] of Object.entries(s.models || {})) {
+      modelTotals[m] = (modelTotals[m] || 0) + c;
+    }
+  }
+  const modelBreakdown = Object.entries(modelTotals)
+    .sort((a, b) => b[1] - a[1])
+    .map(([m, c]) => `<span class="ml ml-${m}">${m}</span>&nbsp;${c}`)
+    .join('&nbsp;&nbsp;&nbsp;');
 
   let html = `<div class="sc-summary">
-    <div><div class="sc-stat-val" style="color:var(--accent)">~$${totalCost.toFixed(2)}</div><div class="sc-stat-label">est. cost</div></div>
-    <div><div class="sc-stat-val">${totalPrompts}</div><div class="sc-stat-label">prompts</div></div>
+    <div><div class="sc-stat-val" style="color:var(--accent)">$${totalCost.toFixed(2)}</div><div class="sc-stat-label">cost${activeProject !== 'all' ? '' : ' today'}</div></div>
+    <div><div class="sc-stat-val">${totalPrompts}</div><div class="sc-stat-label">API calls</div></div>
     <div><div class="sc-stat-val">${entries.length}</div><div class="sc-stat-label">sessions</div></div>
   </div>`;
+
+  if (modelBreakdown) {
+    html += `<div style="margin-bottom:10px;font-size:11px;color:var(--dim)">${modelBreakdown}</div>`;
+  }
 
   html += '<div style="max-height:240px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--faint) transparent">';
   for (const [sid, s] of entries) {
@@ -544,12 +889,12 @@ function renderSessionCosts(sc) {
     const models = Object.entries(s.models||{}).map(([m,c]) => `<span class="ml ml-${m}">${m}</span> <span style="color:var(--dim);font-size:11px">&times;${c}</span>`).join('&nbsp;&nbsp;');
     html += `<div class="sc-row">
       <div>
-        <div style="font-size:13px;font-weight:500">${esc(s.project)} <span style="color:var(--dim);font-weight:400;font-size:11px;font-family:var(--mono)">${sid.slice(0,8)}</span></div>
+        <div style="font-size:13px;font-weight:500">${esc(cleanProject(s.project))} <span style="color:var(--dim);font-weight:400;font-size:11px;font-family:var(--mono)">${sid.slice(0,8)}</span></div>
         <div style="margin-top:2px">${models}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-family:var(--mono);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">~$${s.estimatedCost.toFixed(2)}</div>
-        <div style="font-size:11px;color:var(--dim)">${s.prompts} prompts &middot; ${time}</div>
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">$${s.estimatedCost.toFixed(2)}</div>
+        <div style="font-size:11px;color:var(--dim)">${s.prompts} API calls &middot; ${time}</div>
       </div>
     </div>`;
   }
@@ -607,10 +952,11 @@ function renderInsights(insights) {
   let html = '';
   for (const i of live) {
     const dot = i.severity === 'critical' ? 'crit' : i.severity === 'warning' ? 'warn' : i.severity === 'success' ? 'ok' : 'info';
-    html += `<div class="ins-item">
+    const card = i.severity === 'critical' ? 'crit' : i.severity === 'warning' ? 'warn' : i.severity === 'success' ? 'ok' : 'info';
+    html += `<div class="ins-item ins-item-${card}">
       <div class="ins-title"><span class="ins-dot ins-dot-${dot}"></span>${esc(i.title)}</div>
       <div class="ins-detail">${esc(i.detail)}</div>
-      <div class="ins-action">&rarr; ${esc(i.action)}</div>
+      <div class="ins-action">${esc(i.action)}</div>
     </div>`;
   }
   if (hist.length) {
@@ -618,10 +964,10 @@ function renderInsights(insights) {
       <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="font-size:11px;color:var(--dim);background:none;border:1px solid var(--border);border-radius:4px;padding:3px 8px;cursor:pointer;font-family:inherit">${hist.length} historical</button>
       <div style="display:none">`;
     for (const i of hist) {
-      html += `<div class="ins-item" style="opacity:0.6">
+      html += `<div class="ins-item ins-item-info" style="opacity:0.6">
         <div class="ins-title"><span class="ins-dot ins-dot-info"></span>${esc(i.title)}</div>
         <div class="ins-detail">${esc(i.detail)}</div>
-        <div class="ins-action">&rarr; ${esc(i.action)}</div>
+        <div class="ins-action">${esc(i.action)}</div>
       </div>`;
     }
     html += '</div></div>';
