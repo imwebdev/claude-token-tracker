@@ -176,16 +176,6 @@ function getAdjustment(family, recommendedModel) {
 
   const rate = entry.weightedRate;
 
-  // High success (>0.80) — confirm the recommendation
-  if (rate >= 0.80) {
-    return {
-      suggestion: 'confirm',
-      reason: `${recommendedModel} scores ${Math.round(rate * 100)}% for ${family} (${entry.samples} outcomes)`,
-      confidence: rate,
-      samples: entry.samples,
-    };
-  }
-
   // Low success (<0.55) — suggest upgrading to a more capable model
   if (rate < 0.55) {
     const upgrade = recommendedModel === 'haiku' ? 'sonnet' : recommendedModel === 'sonnet' ? 'opus' : null;
@@ -206,7 +196,8 @@ function getAdjustment(family, recommendedModel) {
     }
   }
 
-  // Very high success (>0.85) on expensive model — suggest downgrading
+  // Very high success (>0.85) on non-cheapest model — suggest downgrading to save cost.
+  // NOTE: checked BEFORE the >0.80 confirm threshold, otherwise this branch is dead code.
   if (rate >= 0.85 && recommendedModel !== 'haiku') {
     const downgrade = recommendedModel === 'opus' ? 'sonnet' : recommendedModel === 'sonnet' ? 'haiku' : null;
     if (downgrade) {
@@ -225,7 +216,17 @@ function getAdjustment(family, recommendedModel) {
     }
   }
 
-  return null;
+  // Good success (0.55–0.84) or downgrade not viable — confirm the current routing
+  if (rate >= 0.80) {
+    return {
+      suggestion: 'confirm',
+      reason: `${recommendedModel} scores ${Math.round(rate * 100)}% for ${family} (${entry.samples} outcomes)`,
+      confidence: rate,
+      samples: entry.samples,
+    };
+  }
+
+  return null; // 0.55–0.79: inconclusive — not enough signal to act
 }
 
 /**

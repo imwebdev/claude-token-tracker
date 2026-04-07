@@ -224,25 +224,25 @@ const OPUS_FLOOR = new Set([TASK_FAMILIES.ARCHITECTURE]);
 /**
  * Recommend the optimal model tier based on classification and model floor.
  *
- * Model floor behaviour:
- *   'haiku'  — start on haiku, only upgrade when the task genuinely needs more
- *   'sonnet' — start on sonnet (default), upgrade to opus for complex/architecture
- *   'opus'   — everything runs on opus, no downgrade
+ * Default model behaviour (routing starts here, goes up or down based on complexity):
+ *   'haiku'  — start on haiku, upgrade when the task genuinely needs more
+ *   'sonnet' — start on sonnet (default), haiku for simple tasks, opus for complex
+ *   'opus'   — everything runs on opus, no downgrading
  *
  * @param {object} classification -- from classifyTask()
- * @param {object} opts -- { model_floor?: string, preference?: number (legacy) }
+ * @param {object} opts -- { default_model?: string, model_floor?: string (legacy), preference?: number (legacy) }
  */
 function recommendModel(classification, opts = {}) {
   const { family, complexity, customModel } = classification || {};
 
-  // Resolve model floor from opts or config
-  let floor = opts.model_floor;
+  // Resolve default model from opts or config
+  let floor = opts.default_model || opts.model_floor; // accept both; model_floor is legacy
   let preference = opts.preference; // legacy compat
   if (!floor) {
     try {
       const config = require('./config');
       const cfg = config.read();
-      floor = cfg.model_floor;
+      floor = cfg.default_model || cfg.model_floor;
       if (preference == null) preference = cfg.routing_preference;
     } catch {}
   }
@@ -253,7 +253,7 @@ function recommendModel(classification, opts = {}) {
   if (customModel && MODEL_ORDER.includes(customModel)) {
     return {
       model: customModel,
-      model_floor: floor,
+      default_model: floor,
       fallbackChain: customModel === 'haiku' ? ['haiku', 'sonnet', 'opus']
         : customModel === 'sonnet' ? ['sonnet', 'opus']
         : ['opus'],
@@ -287,7 +287,7 @@ function recommendModel(classification, opts = {}) {
         reasons.push(`[experiment] ${exp.id} (${exp.family}) -- assigned ${experimentModel} (${exp.count + 1}/${exp.target})`);
         return {
           model,
-          model_floor: floor,
+          default_model: floor,
           fallbackChain: model === 'haiku' ? ['haiku', 'sonnet', 'opus']
             : model === 'sonnet' ? ['sonnet', 'opus']
             : ['opus'],
@@ -360,9 +360,18 @@ function recommendModel(classification, opts = {}) {
         if (adj.suggestion === 'upgrade' && adj.upgradeTo) {
           model = adj.upgradeTo;
           reasons.push(`[learned] ${adj.reason}`);
-        } else if (adj.suggestion === 'downgrade' && adj.downgradeTo && floor !== 'opus') {
-          model = adj.downgradeTo;
-          reasons.push(`[learned] ${adj.reason}`);
+        } else if (adj.suggestion === 'downgrade' && adj.downgradeTo) {
+          const downgradeIdx = MODEL_ORDER.indexOf(adj.downgradeTo);
+          if (downgradeIdx >= floorIdx) {
+            // Downgrade is within the allowed floor — apply it
+            model = adj.downgradeTo;
+            reasons.push(`[learned] ${adj.reason}`);
+          } else {
+            // Downgrade blocked by model floor — surface as a tip so user can see the insight
+            reasons.push(`[learned:tip] ${adj.reason} (floor=${floor} prevents downgrade to ${adj.downgradeTo})`);
+          }
+        } else if (adj.suggestion === 'confirm') {
+          reasons.push(`[learned:confirm] ${adj.reason}`);
         }
       }
     } catch {}
@@ -371,7 +380,7 @@ function recommendModel(classification, opts = {}) {
   return {
     model,
     baseModel: base.model,
-    model_floor: floor,
+    default_model: floor,
     fallbackChain: model === 'haiku' ? ['haiku', 'sonnet', 'opus']
       : model === 'sonnet' ? ['sonnet', 'opus']
       : ['opus'],
