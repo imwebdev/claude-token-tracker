@@ -468,12 +468,12 @@ function buildHTML() {
 
     <div class="card anim d1" style="margin-bottom:12px">
       <div class="card-hd">
-        <h2>Model floor</h2>
-        <span class="ct" id="v-floor-label">${D.config?.model_floor || 'sonnet'}</span>
+        <h2>Default model</h2>
+        <span class="ct" id="v-floor-label">${D.config?.default_model || D.config?.model_floor || 'sonnet'}</span>
       </div>
-      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.5">The model floor controls which model Token Coach recommends for subagent tasks. Your main session model is set when you start Claude Code.</div>
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.5">Routing starts here and adjusts up or down based on task complexity. Simple tasks go lower, complex tasks go higher.</div>
       <div class="floor-row" id="v-floor-row">
-        ${renderFloorSelector(D.config?.model_floor || 'sonnet')}
+        ${renderFloorSelector(D.config?.default_model || D.config?.model_floor || 'sonnet')}
       </div>
       <div id="v-floor-warning">${renderFloorWarning(D)}</div>
     </div>
@@ -669,7 +669,7 @@ function setFloor(floor) {
   fetch('/api/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_floor: floor }),
+    body: JSON.stringify({ default_model: floor }),
   }).then(r => r.json()).then(cfg => {
     if (DATA) DATA.config = cfg;
     // Update UI without full re-render

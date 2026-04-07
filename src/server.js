@@ -336,7 +336,7 @@ const server = http.createServer((req, res) => {
           const allowed = new Set(Object.keys(config.DEFAULTS));
           for (const [k, v] of Object.entries(updates)) {
             if (!allowed.has(k)) continue;
-            if (k === 'model_floor' && !['haiku', 'sonnet', 'opus'].includes(v)) continue;
+            if (k === 'default_model' && !['haiku', 'sonnet', 'opus'].includes(v)) continue;
             config.set(k, v);
           }
           config.clearCache();

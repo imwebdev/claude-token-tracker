@@ -15,7 +15,7 @@ function generateInsights(data) {
   try {
     const config = require('./config');
     const parser = require('./parser');
-    const floor = config.read().model_floor || 'sonnet';
+    const floor = config.read().default_model || 'sonnet';
     const tu = parser.readSessionTokenUsage();
     const bm = tu?.byModel || {};
     const opusCalls = bm.opus?.calls || 0;

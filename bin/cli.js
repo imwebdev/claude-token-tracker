@@ -196,11 +196,11 @@ function handleConfig(args) {
       console.log(`  ${k}: ${JSON.stringify(v)}${label}`);
     }
     console.log('\n  Set a value: claude-tokens config <key> <value>');
-    console.log('  Example: claude-tokens config model_floor haiku\n');
-    console.log('  Model floor (starting model):');
-    console.log('    haiku  — Start everything on haiku, only upgrade when needed');
-    console.log('    sonnet — Start on sonnet (default), upgrade to opus for complex work');
-    console.log('    opus   — Everything runs on opus, no routing\n');
+    console.log('  Example: claude-tokens config default_model haiku\n');
+    console.log('  Default model (routing starts here, adjusts up or down by task complexity):');
+    console.log('    haiku  — Start on haiku, upgrade for complex tasks (max savings)');
+    console.log('    sonnet — Start on sonnet (default), haiku for simple, opus for complex');
+    console.log('    opus   — Always use opus, no downgrading\n');
     return;
   }
 
@@ -233,32 +233,35 @@ function handleConfig(args) {
     return;
   }
 
-  // Validate model_floor
-  if (key === 'model_floor') {
+  // Validate default_model (also accept model_floor as legacy alias)
+  if (key === 'default_model' || key === 'model_floor') {
     const valid = ['haiku', 'sonnet', 'opus'];
     if (!valid.includes(value)) {
-      console.error(`  Error: model_floor must be one of: ${valid.join(', ')}`);
+      console.error(`  Error: default_model must be one of: ${valid.join(', ')}`);
       process.exit(1);
     }
-    config.set('model_floor', value);
-    const labels = { haiku: 'haiku-first (max savings)', sonnet: 'sonnet-first (default)', opus: 'opus-first (no routing)' };
-    console.log(`\n  ✓ model_floor set to ${value} — ${labels[value]}\n`);
+    config.set('default_model', value);
+    const labels = {
+      haiku: 'haiku-first — routing starts here, upgrades for complex tasks (max savings)',
+      sonnet: 'sonnet-first — routing starts here, adjusts up or down (default)',
+      opus: 'opus-first — always opus, no downgrading',
+    };
+    console.log(`\n  ✓ default_model set to ${value} — ${labels[value]}\n`);
     return;
   }
 
-  // Legacy: routing_preference — map to model_floor
+  // Legacy: routing_preference — map to default_model
   if ((key === 'routing_preference' || key === '--preference') && typeof parsed === 'number') {
     if (parsed < 0 || parsed > 100) {
       console.error('  Error: routing_preference must be 0-100');
       process.exit(1);
     }
     config.set('routing_preference', parsed);
-    // Also set model_floor based on the preference
     const floor = parsed <= 25 ? 'haiku' : parsed <= 75 ? 'sonnet' : 'opus';
-    config.set('model_floor', floor);
+    config.set('default_model', floor);
     const label = parsed <= 25 ? 'max savings' : parsed <= 50 ? 'cost-conscious' : parsed <= 75 ? 'balanced' : 'max quality';
     console.log(`\n  ✓ routing_preference set to ${parsed} (${label})`);
-    console.log(`  ✓ model_floor set to ${floor}\n`);
+    console.log(`  ✓ default_model set to ${floor}\n`);
     return;
   }
 

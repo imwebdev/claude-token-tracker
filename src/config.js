@@ -6,13 +6,13 @@ const fs = require('fs');
 const dataHome = require('./data-home');
 
 const DEFAULTS = {
-  // Model floor: the starting model for all tasks.
-  // 'haiku'  — start everything on haiku, only upgrade when needed
-  // 'sonnet' — start on sonnet, upgrade to opus for complex work (default)
-  // 'opus'   — everything runs on opus, no routing
-  model_floor: 'sonnet',
+  // Default model: where routing starts. Tasks go up or down from here based on complexity.
+  // 'haiku'  — start on haiku, upgrade for complex tasks (max savings)
+  // 'sonnet' — start on sonnet, haiku for simple tasks, opus for complex (default)
+  // 'opus'   — everything runs on opus, no downgrading
+  default_model: 'sonnet',
 
-  // Legacy — kept for backward compat; ignored when model_floor is set explicitly.
+  // Legacy — kept for backward compat; ignored when default_model is set explicitly.
   routing_preference: 35,
 
   // Daily budget alerts (USD). null = disabled.
@@ -29,17 +29,21 @@ function configPath() {
   return dataHome.getConfigPath();
 }
 
-/** Map legacy routing_preference to model_floor. */
-function migratePreference(user) {
-  // If user already set model_floor explicitly, skip migration
-  if (user.model_floor) return user;
-  // If they have a routing_preference, derive model_floor from it
-  if (user.routing_preference != null) {
-    const pref = user.routing_preference;
-    if (pref <= 25) user.model_floor = 'haiku';
-    else if (pref <= 75) user.model_floor = 'sonnet';
-    else user.model_floor = 'opus';
+/** Migrate legacy keys to current schema. */
+function migrate(user) {
+  // model_floor → default_model (renamed for clarity)
+  if (!user.default_model && user.model_floor) {
+    user.default_model = user.model_floor;
   }
+  // routing_preference → default_model (oldest compat)
+  if (!user.default_model && user.routing_preference != null) {
+    const pref = user.routing_preference;
+    if (pref <= 25) user.default_model = 'haiku';
+    else if (pref <= 75) user.default_model = 'sonnet';
+    else user.default_model = 'opus';
+  }
+  // Strip legacy keys so they don't appear in the runtime config
+  delete user.model_floor;
   return user;
 }
 
@@ -51,7 +55,7 @@ function read() {
   if (fs.existsSync(fp)) {
     try { user = JSON.parse(fs.readFileSync(fp, 'utf-8')); } catch {}
   }
-  _cache = { ...DEFAULTS, ...migratePreference(user) };
+  _cache = { ...DEFAULTS, ...migrate(user) };
   return _cache;
 }
 
