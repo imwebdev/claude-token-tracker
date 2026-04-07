@@ -51,15 +51,24 @@ const PATTERNS = {
     'remind me',
     // Specific conceptual questions (more specific than bare "what is" → beat search in score)
     'what is the difference', 'what is the best', 'what is the purpose', 'what is the reason',
+    // Additional natural question forms
+    'any way to', 'is there any way',   // "any way to override X" = question
+    'not sure',                          // "not sure I understand" = explanation request
+    'anyone know', 'does anyone',        // "anyone know if X" = community question
+    'was that', 'was it',               // "was that always the case" = history question
   ],
   review: [
     'review', 'audit', 'compare', 'benchmark', 'analyze', 'assess',
     'evaluate', 'check quality', 'code review', 'look over',
     // Informal review requests
-    'take a look', 'quick look', 'have a look',
-    'once over', 'sanity check',
+    'take a look', 'quick look', 'have a look', 'take a peek',
+    'once over', 'once-over', 'sanity check',
     'does this look', 'anything jump',
-    'second opinion',
+    'second opinion', 'second pair',
+    'mind giving', 'mind reviewing',
+    'right track', 'on track',    // "am I on the right track" = validation request
+    'make sense',                  // "does the flow still make sense" = review
+    'am i',                        // "am I doing this right" = validation request
   ],
   plan: [
     'plan', 'design', 'spec', 'roadmap', 'outline', 'strategy', 'approach',
@@ -81,21 +90,31 @@ const PATTERNS = {
     // Still/keeps/never patterns
     'keeps', 'still not', 'still showing', 'still getting', 'still going', 'still routing',
     'never fires', 'never reaches', 'never reached', 'never called', 'never triggered',
-    // Contraction-based behavioral symptoms
+    // Contractions — both apostrophe and plain forms
     "isn't", 'isnt', "doesn't", 'doesnt', "didn't", 'didnt', "won't", 'wont',
+    "don't", 'dont',                   // "don't match", "don't seem to be applied"
+    "haven't", 'havent',               // "haven't changed in days"
+    "aren't", 'arent',                 // "aren't firing"
     // Behavioral anomaly indicators
-    // NOTE: "instead of" is weak — only triggers debug when no edit word competes (no debug+edit).
-    // "going to haiku instead of sonnet" (no edit word) → debug ✓
-    // "change X to use Y instead of Z" (edit word: change) → falls through to code_edit ✓
-    'instead of',
+    // NOTE: "instead of" removed — "thoughts on X instead of Y" is a question, not a bug.
+    // Cases like "still routing to sonnet" are covered by "still routing"/"still going" patterns.
     'stopped', 'hangs', 'stuck',
+    'resets',                           // "session cost resets mid-conversation"
+    'duplicate', 'duplicates',          // "I see duplicate entries"
+    'broke', 'breaks',                  // "the dashboard broke"
+    'garbled', 'truncated', 'chokes',   // output corruption, data loss, process failure
     'blank', 'nothing is', 'nothing shows', 'nothing works',
+    'keep getting',                     // "I keep getting routed to..." (first-person recurring)
+    'still choosing', 'still running',  // stuck/unexpected persistence (adds to existing still-*)
+    'no matter what', 'regardless',    // "no matter what I type" = stuck behavior
+    'used to work', 'used to',          // "this used to work" = regression
+    'sometimes',                        // intermittent: "sometimes the hook fires twice"
     // Return value failures
     'returns null', 'returns undefined', 'returns false',
     // Specific diagnostic indicators
     'dead code', 'unreachable', 'NaN',
     'way off', 'off by',
-    // Context/contrast words (weak — only fire when no competing edit action)
+    // Context/contrast words (weak)
     'despite', 'even though', 'even when',
     "don't know why", 'dont know why', 'not sure why',
     'seems to not', 'appears to not',
@@ -112,8 +131,9 @@ const OPINION_QUESTION_PATTERNS = [
   'what do you think', 'do you think',
   'what would you recommend', 'what would you',
   'what would happen',
-  'wondering', 'curious',          // "wondering if we need..." = curiosity, not planning
+  'wondering', 'curious',            // "wondering if we need..." = curiosity, not planning
   'just checking', 'just wondering', // "just checking if this is right" = validation question
+  'out of curiosity',                // "out of curiosity does X do Y" = curiosity question
 ];
 
 // Info-seeking interrogatives override edit/command but NOT plan/review.
@@ -142,17 +162,23 @@ const STRONG_DEBUG_SIGNALS = [
   'crash', 'crashes', 'crashing',
   'not updating', 'not appearing', 'not firing', 'not fire', 'not showing', 'not loading',
   'not clearing', 'not triggering', 'not triggered', 'not running', 'not saving',
-  'keeps', 'still not', 'still showing', 'still getting', 'still going', 'still routing',
+  'keeps', 'keep getting',
+  'still not', 'still showing', 'still getting', 'still going', 'still routing', 'still choosing', 'still running',
   'never fires', 'never reaches', 'never reached', 'never called', 'never triggered',
   "isn't", 'isnt', "doesn't", 'doesnt', "didn't", 'didnt', "won't", 'wont',
+  "don't", 'dont', "haven't", 'havent', "aren't", 'arent',
   'stopped', 'hangs', 'stuck',
+  'resets', 'duplicate', 'duplicates', 'broke', 'breaks',
+  'garbled', 'truncated', 'chokes',
   'blank', 'nothing is', 'nothing shows', 'nothing works',
+  'no matter what', 'regardless',
+  'used to work',
   'returns null', 'returns undefined', 'returns false',
   'dead code', 'unreachable', 'NaN',
   'way off', 'off by',
   'seems to not', 'appears to not',
-  'every single', 'every time',   // "appears every single prompt" = repeating bug
-  'issue is',                      // "the issue is that X" = problem description
+  'every single', 'every time',
+  'issue is',
   "don't know why", 'dont know why', 'not sure why',
 ];
 
