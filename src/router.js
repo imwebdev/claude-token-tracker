@@ -19,7 +19,7 @@ const TASK_FAMILIES = {
 };
 
 const PATTERNS = {
-  search: ['search', 'find', 'grep', 'look up', 'scan', 'where is', 'which file', 'locate', 'list', 'show me', 'what is', 'read', 'check', 'inspect', 'explore', 'browse'],
+  search: ['search', 'find', 'grep', 'look up', 'scan', 'where is', 'which file', 'locate', 'list', 'show me', 'what is', 'read', 'check', 'inspect', 'explore', 'browse', 'reference', 'references'],
   question: [
     // Classic interrogatives
     'how do', 'how does', 'how is', 'how are', 'how would',
@@ -30,19 +30,27 @@ const PATTERNS = {
     'should we', 'should i', 'do we', 'do you', 'do i',
     'are we', 'is this', 'is that', 'is there',
     // Natural English opinion/conversational
-    'can you', 'could you', 'would you', 'will you',
+    'can you', 'could you', 'would you', 'will you', 'will this',
     'can you explain', 'tell me', 'help me understand',
     'any thoughts', 'thoughts on', 'what do you think',
-    'does this', 'does that',
+    'does this', 'does that', 'how many', 'is there a', 'is the',
     'summarize', 'describe', 'explain',
   ],
   review: ['review', 'audit', 'compare', 'benchmark', 'analyze', 'assess', 'evaluate', 'check quality', 'code review', 'look over'],
   plan: ['plan', 'design', 'spec', 'roadmap', 'outline', 'strategy', 'approach', 'how should', 'what approach', 'propose'],
   architecture: ['architecture', 'system design', 'infrastructure', 'database schema', 'data model', 'migration strategy', 'scalability'],
-  edit: ['fix', 'edit', 'update', 'change', 'modify', 'implement', 'refactor', 'write', 'create', 'add', 'remove', 'delete', 'rename', 'move', 'replace', 'make'],
-  debug: ['bug', 'broken', 'debug', 'why does', 'failure', 'regression', 'error', 'crash', 'not working', 'fails', 'wrong', 'issue', 'problem', 'unexpected'],
-  command: ['run', 'execute', 'deploy', 'build', 'test', 'install', 'start', 'stop', 'restart', 'migrate', 'merge', 'push', 'pull', 'close', 'open'],
-  complex: ['multi-file', 'across', 'full app', 'entire', 'all files', 'whole codebase', 'comprehensive', 'complete', 'overhaul', 'rewrite', 'from scratch', 'system-wide'],
+  edit: ['fix', 'edit', 'update', 'change', 'modify', 'implement', 'refactor', 'write', 'rewrite', 'create', 'add', 'remove', 'delete', 'rename', 'move', 'replace', 'make', 'overhaul'],
+  debug: [
+    // Classic keywords
+    'bug', 'broken', 'debug', 'failure', 'regression', 'not working', 'fails', 'wrong', 'issue', 'problem', 'unexpected',
+    // Inflected forms (word boundary blocks suffix matching)
+    'crash', 'crashes', 'crashing',
+    // Natural language symptom descriptions — specific enough not to collide with search
+    'not updating', 'not appearing', 'not firing', 'not showing', 'not loading',
+    'keeps', 'still not', 'never fires', 'never reaches',
+  ],
+  command: ['run', 'execute', 'deploy', 'build', 'test', 'install', 'start', 'stop', 'restart', 'migrate', 'merge', 'push', 'pull'],
+  complex: ['multi-file', 'across', 'full app', 'entire', 'all files', 'whole codebase', 'whole', 'comprehensive', 'complete', 'overhaul', 'rewrite', 'from scratch', 'system-wide', 'system wide'],
   simple: ['typo', 'rename', 'one line', 'small', 'quick', 'simple', 'just', 'only'],
 };
 
