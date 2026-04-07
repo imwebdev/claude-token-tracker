@@ -20,13 +20,28 @@ const TASK_FAMILIES = {
 
 const PATTERNS = {
   search: ['search', 'find', 'grep', 'look up', 'scan', 'where is', 'which file', 'locate', 'list', 'show me', 'what is', 'read', 'check', 'inspect', 'explore', 'browse'],
-  question: ['how do', 'how does', 'what does', 'why does', 'can you explain', 'tell me', 'what is the', 'does this', 'is there', 'help me understand', 'summarize', 'describe', 'explain'],
+  question: [
+    // Classic interrogatives
+    'how do', 'how does', 'how is', 'how are', 'how would',
+    'what does', 'what is the', 'what will', 'what would', 'what do you', 'what are',
+    'why does', 'why is', 'why are', 'why would',
+    'where do', 'where are', 'where is',
+    'when should', 'when do', 'when is',
+    'should we', 'should i', 'do we', 'do you', 'do i',
+    'are we', 'is this', 'is that', 'is there',
+    // Natural English opinion/conversational
+    'can you', 'could you', 'would you', 'will you',
+    'can you explain', 'tell me', 'help me understand',
+    'any thoughts', 'thoughts on', 'what do you think',
+    'does this', 'does that',
+    'summarize', 'describe', 'explain',
+  ],
   review: ['review', 'audit', 'compare', 'benchmark', 'analyze', 'assess', 'evaluate', 'check quality', 'code review', 'look over'],
   plan: ['plan', 'design', 'spec', 'roadmap', 'outline', 'strategy', 'approach', 'how should', 'what approach', 'propose'],
   architecture: ['architecture', 'system design', 'infrastructure', 'database schema', 'data model', 'migration strategy', 'scalability'],
-  edit: ['fix', 'edit', 'update', 'change', 'modify', 'implement', 'refactor', 'write', 'create', 'add', 'remove', 'delete', 'rename', 'move', 'replace'],
+  edit: ['fix', 'edit', 'update', 'change', 'modify', 'implement', 'refactor', 'write', 'create', 'add', 'remove', 'delete', 'rename', 'move', 'replace', 'make'],
   debug: ['bug', 'broken', 'debug', 'why does', 'failure', 'regression', 'error', 'crash', 'not working', 'fails', 'wrong', 'issue', 'problem', 'unexpected'],
-  command: ['run', 'execute', 'deploy', 'build', 'test', 'install', 'start', 'stop', 'restart', 'migrate'],
+  command: ['run', 'execute', 'deploy', 'build', 'test', 'install', 'start', 'stop', 'restart', 'migrate', 'merge', 'push', 'pull', 'close', 'open'],
   complex: ['multi-file', 'across', 'full app', 'entire', 'all files', 'whole codebase', 'comprehensive', 'complete', 'overhaul', 'rewrite', 'from scratch', 'system-wide'],
   simple: ['typo', 'rename', 'one line', 'small', 'quick', 'simple', 'just', 'only'],
 };
