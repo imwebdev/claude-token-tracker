@@ -6,6 +6,7 @@ const calculator = require('./calculator');
 const { generateInsights } = require('./insights');
 const events = require('./events');
 const { getLearningStats } = require('./learner');
+const { calculateCounterfactual, calculateDailySavings } = require('./calculator');
 
 const config = require('./config');
 const PORT = process.env.PORT || config.read().dashboard_port || 6099;
@@ -108,7 +109,7 @@ function buildDashboardData() {
   const mcpServers = {};
   for (const [name, info] of Object.entries(projects)) {
     const projectSettings = parser.readProjectSettings(info.path);
-    const servers = parser.getMcpServers(globalSettings, projectSettings);
+    const servers = parser.getMcpServers(globalSettings, projectSettings, info.path);
     mcpServers[name] = { ...servers, projectPath: info.path };
   }
 
@@ -161,20 +162,25 @@ function buildDashboardData() {
       timestamp: d.ts,
       project: d.project || 'unknown',
       model: d.recommended_model || 'sonnet',
+      baseModel: d.base_model || null,
+      modelFloor: d.model_floor || null,
       size: d.classification?.complexity === 'high' ? 'L' : d.classification?.complexity === 'low' ? 'S' : 'M',
       description: d.prompt_preview || d.recommended_reason || 'task',
     });
   }
-  // Also merge subagent_dispatch events as delegation entries (opus>sonnet etc)
+  // Also merge subagent_dispatch events as delegation entries
   const hookDispatches = recentEvents.filter(e => e.type === 'subagent_dispatch');
   for (const d of hookDispatches) {
     if (!d.ts || existingTimestamps.has(d.ts)) continue;
-    const src = d.parent_model || 'opus';
     const tgt = d.model_used || d.recommended_model || 'sonnet';
+    const src = d.parent_model || 'opus';
     taskLog.push({
       timestamp: d.ts,
       project: d.project || 'unknown',
-      model: src + '>' + tgt,
+      model: tgt,
+      baseModel: src,
+      modelFloor: null,
+      isSubagent: true,
       size: 'M',
       description: d.description || d.agent_type || 'subagent dispatch',
     });
@@ -214,6 +220,8 @@ function buildDashboardData() {
       timestamp: d.ts,
       project: d.project || 'unknown',
       model: d.recommended_model || 'sonnet',
+      baseModel: d.base_model || null,
+      modelFloor: d.model_floor || null,
       size: d.classification?.complexity === 'high' ? 'L' : d.classification?.complexity === 'low' ? 'S' : 'M',
       description: d.prompt_preview || d.recommended_reason || 'task',
     }));
@@ -277,6 +285,13 @@ function buildDashboardData() {
     learning: getLearningStats(),
     // Token hog analysis
     tokenHogs: events.getTokenHogs(),
+    // Savings: actual vs counterfactual (what-if-everything-was-opus)
+    savings: {
+      today: calculateCounterfactual(parser.readSessionTokenUsage()?.byModel),
+      daily: calculateDailySavings(stats?.dailyModelTokens, 14),
+    },
+    // User config (for dashboard UI controls)
+    config: config.read(),
   };
 }
 
@@ -302,6 +317,38 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: err.message }));
     }
     return;
+  }
+
+  if (req.url === '/api/config') {
+    if (req.method === 'GET') {
+      const cfg = config.read();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(cfg));
+      return;
+    }
+    if (req.method === 'POST' || req.method === 'PUT') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const updates = JSON.parse(body);
+          // Only allow known config keys
+          const allowed = new Set(Object.keys(config.DEFAULTS));
+          for (const [k, v] of Object.entries(updates)) {
+            if (!allowed.has(k)) continue;
+            if (k === 'default_model' && !['haiku', 'sonnet', 'opus'].includes(v)) continue;
+            config.set(k, v);
+          }
+          config.clearCache();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(config.read()));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+      return;
+    }
   }
 
   if (req.url === '/api/dashboard') {

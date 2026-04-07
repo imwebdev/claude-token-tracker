@@ -86,8 +86,10 @@ function handleUserPromptSubmit(input) {
     prompt_preview: prompt.slice(0, 200),
     classification,
     recommended_model: recommendation.model,
+    base_model: recommendation.baseModel,
+    default_model: recommendation.default_model,
     recommended_reason: recommendation.reasons.join('; '),
-    actual_model: null, // filled by PreToolUse or Stop
+    actual_model: null,
     was_delegated: null,
   });
 
@@ -152,14 +154,33 @@ function handleUserPromptSubmit(input) {
     warnings.push(`${warnColor}! Long prompt (${prompt.length} chars) classified as unknown -- vague prompts waste tokens. Be specific: file paths, line numbers, exact changes.${reset}`);
   }
 
-  // Check if learner adjusted the recommendation
-  const learned = recommendation.reasons.some(r => r.startsWith('[learned]'));
-  const learnLine = learned ? `  ${gray}Learned:${reset} ${muted}${recommendation.reasons.filter(r => r.startsWith('[learned]')).map(r => r.replace('[learned] ', '')).join('; ')}${reset}` : null;
+  // Learning signal detection — three variants with different urgency
+  const learnChanged  = recommendation.reasons.filter(r => r.startsWith('[learned]') && !r.startsWith('[learned:'));
+  const learnTip      = recommendation.reasons.filter(r => r.startsWith('[learned:tip]'));
+  const learnConfirm  = recommendation.reasons.filter(r => r.startsWith('[learned:confirm]'));
+  const hasLearning   = learnChanged.length > 0 || learnTip.length > 0 || learnConfirm.length > 0;
+
+  // Distinct colors: bright cyan for changes, amber for tips, sage-green for confirms
+  const learnChangeColor  = '\x1b[38;5;81m';   // bright cyan — model was changed
+  const learnTipColor     = '\x1b[38;5;136m';  // amber — floor blocked a downgrade
+  const learnConfirmColor = '\x1b[38;5;72m';   // muted teal — confirms current routing
+
+  let learnLine = null;
+  if (learnChanged.length > 0) {
+    const text = learnChanged.map(r => r.replace('[learned] ', '')).join('; ');
+    learnLine = `  ${learnChangeColor}\x1b[1m◆ LEARNING:${reset} ${learnChangeColor}${text}${reset}`;
+  } else if (learnTip.length > 0) {
+    const text = learnTip.map(r => r.replace('[learned:tip] ', '')).join('; ');
+    learnLine = `  ${learnTipColor}◇ learning tip:${reset} ${muted}${text}${reset}`;
+  } else if (learnConfirm.length > 0) {
+    const text = learnConfirm.map(r => r.replace('[learned:confirm] ', '')).join('; ');
+    learnLine = `  ${learnConfirmColor}✓ learned:${reset} ${muted}${text}${reset}`;
+  }
 
   const lines = [
     `${gray}- - - - - - - - - - - - - - - - - - - -${reset}`,
     `${amber}${bold}TOKEN COACH${reset}  ${gray}${classification.family} (${classification.complexity}, ${confidence} conf)${reset}`,
-    `  ${gray}model:${reset}   ${color}${recommendation.model}${reset}  ${muted}${recommendation.reasons.filter(r => !r.startsWith('[learned]')).join('; ')}${reset}`,
+    `  ${gray}model:${reset}   ${color}${recommendation.model}${reset}  ${muted}${recommendation.reasons.filter(r => !r.startsWith('[learned')).join('; ')}${reset}`,
     `  ${gray}action:${reset}  ${color}${action}${reset}`,
     ...(learnLine ? [learnLine] : []),
     `  ${gray}session:${reset} ${costColor}${costStr}${reset} ${gray}(${promptCount} prompts)${reset}`,
@@ -175,14 +196,18 @@ function handleUserPromptSubmit(input) {
   const warningLines = warnings.length > 0
     ? ' WARNINGS: ' + warnings.map(w => w.replace(/\x1b\[[0-9;]*m/g, '')).join(' | ')
     : '';
-  const learnNote = learned
-    ? ` Learned: ${recommendation.reasons.filter(r => r.startsWith('[learned]')).map(r => r.replace('[learned] ', '')).join('; ')}.`
+  const learnNote = learnChanged.length > 0
+    ? ` [LEARNING ADJUSTMENT] ${learnChanged.map(r => r.replace('[learned] ', '')).join('; ')}.`
+    : learnTip.length > 0
+    ? ` [Learning tip] ${learnTip.map(r => r.replace('[learned:tip] ', '')).join('; ')}.`
+    : learnConfirm.length > 0
+    ? ` [Learning: confirmed] ${learnConfirm.map(r => r.replace('[learned:confirm] ', '')).join('; ')}.`
     : '';
 
   const ctx = [
     `[claude-token-tracker] Task classified: ${classification.family} (${classification.complexity} complexity, ${confidence} confidence).`,
     `Recommended model: ${recommendation.model.toUpperCase()}.`,
-    `Reason: ${recommendation.reasons.filter(r => !r.startsWith('[learned]')).join('; ')}.${learnNote}`,
+    `Reason: ${recommendation.reasons.filter(r => !r.startsWith('[learned')).join('; ')}.${learnNote}`,
     `Session: ${costStr} (${promptCount} prompts).${warningLines}`,
   ];
 

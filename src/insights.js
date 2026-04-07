@@ -11,6 +11,29 @@ function generateInsights(data) {
   const { stats, history, sessions, dailyLogs, taskLog, projects, mcpServers } = data;
   const runWaste = detectWaste(data.runs || []);
 
+  // ─── Primary model mismatch check ─────────────────────────
+  try {
+    const config = require('./config');
+    const parser = require('./parser');
+    const floor = config.read().default_model || 'sonnet';
+    const tu = parser.readSessionTokenUsage();
+    const bm = tu?.byModel || {};
+    const opusCalls = bm.opus?.calls || 0;
+    const total = opusCalls + (bm.sonnet?.calls || 0) + (bm.haiku?.calls || 0);
+    const opusPct = total > 0 ? Math.round(opusCalls / total * 100) : 0;
+    const opusCost = bm.opus?.cost || 0;
+
+    if (floor !== 'opus' && opusPct > 70 && total > 10) {
+      insights.push({
+        _live: true,
+        severity: 'warning',
+        title: `${opusPct}% of API calls still run on opus ($${opusCost.toFixed(2)} today)`,
+        detail: `Your model floor is set to ${floor}, but your main Claude Code session is running on opus. The floor only affects subagent routing — the primary session model is set when you start Claude Code.`,
+        action: `Start Claude Code with: claude --model ${floor}. Token Coach will still upgrade to opus when a task needs it.`,
+      });
+    }
+  } catch {}
+
   // ─── Live Routing Insights (from hooks — always fresh) ────
   const routingStats = events.getRoutingStats();
 
@@ -214,20 +237,146 @@ function generateInsights(data) {
     }
   }
 
-  // ─── MCP Server Analysis ───────────────────────────────────
+  // ─── MCP Server Analysis (#52) ────────────────────────────
   if (mcpServers) {
-    for (const [projectName, serverInfo] of Object.entries(mcpServers)) {
+    // Find the common (global) servers shared across all projects
+    const allProjects = Object.entries(mcpServers).filter(([, info]) => info.enabled.length > 0);
+    const globalServers = allProjects.length > 0
+      ? allProjects.reduce((common, [, info]) => common.filter(s => info.enabled.includes(s)), allProjects[0]?.[1]?.enabled || [])
+      : [];
+
+    // Show one aggregated insight for global MCP servers
+    if (globalServers.length > 0) {
+      const tokenOverheadPerMsg = globalServers.length * 800;
+      const msgsToday = (stats?.dailyActivity || []).slice(-1)[0]?.messageCount || 0;
+      const opusPrice = 15 / 1_000_000;
+      const dailyCostEst = msgsToday * tokenOverheadPerMsg * opusPrice;
+      const severity = globalServers.length >= 5 ? 'critical' : globalServers.length >= 3 ? 'warning' : 'info';
+      insights.push({
+        _live: true,
+        severity,
+        title: `${globalServers.length} global MCP server${globalServers.length > 1 ? 's' : ''} active in all ${allProjects.length} projects — ~${(tokenOverheadPerMsg / 1000).toFixed(1)}K tokens/msg`,
+        detail: `Global servers: ${globalServers.join(', ')}. These are included in every message across all projects${dailyCostEst > 0.01 ? ` — estimated $${dailyCostEst.toFixed(2)}/day overhead` : ''}.`,
+        action: 'Disable unused global servers in ~/.mcp.json. Only keep servers you use across all projects.',
+      });
+    }
+
+    // Show per-project insights only for projects with EXTRA servers beyond global
+    for (const [projectName, serverInfo] of allProjects) {
       const { enabled, disabled, projectPath } = serverInfo;
-      if (enabled.length > 5) {
-        insights.push({
-          severity: 'warning',
-          title: `${projectName}: ${enabled.length} MCP servers active`,
-          detail: `Active servers: ${enabled.join(', ')}. Each MCP server adds tool definitions to the system prompt, consuming tokens on every message. Disabled: ${disabled.length > 0 ? disabled.join(', ') : 'none'}.`,
-          action: `Disable unused MCP servers in ${projectPath}/.claude/settings.json → disabledMcpServers. Only keep servers this project actually uses.`,
-        });
-      }
+      const extraServers = enabled.filter(s => !globalServers.includes(s));
+      if (extraServers.length === 0) continue;
+      const tokenOverheadPerMsg = extraServers.length * 800;
+      const msgsToday = (stats?.dailyActivity || []).slice(-1)[0]?.messageCount || 0;
+      const opusPrice = 15 / 1_000_000;
+      const dailyCostEst = msgsToday * tokenOverheadPerMsg * opusPrice;
+      const severity = enabled.length >= 5 ? 'critical' : enabled.length >= 3 ? 'warning' : 'info';
+      insights.push({
+        _live: true,
+        severity,
+        title: `${projectName}: ${extraServers.length} extra MCP server${extraServers.length > 1 ? 's' : ''} — ~${(tokenOverheadPerMsg / 1000).toFixed(1)}K extra tokens/msg`,
+        detail: `Project-specific servers: ${extraServers.join(', ')} (plus ${globalServers.length} global). Total: ${enabled.length} servers${dailyCostEst > 0.01 ? ` — extra $${dailyCostEst.toFixed(2)}/day overhead` : ''}. Disabled: ${disabled.length > 0 ? disabled.join(', ') : 'none'}.`,
+        action: `Disable unused servers in ${projectPath}/.claude/settings.json → disabledMcpServers.`,
+      });
     }
   }
+
+  // ─── CLAUDE.md Bloat Detection (#53) ──────────────────────
+  try {
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const claudeMdPaths = [
+      { file: path.join(os.homedir(), '.claude', 'CLAUDE.md'), label: '~/.claude/CLAUDE.md' },
+      { file: path.join(os.homedir(), 'CLAUDE.md'), label: '~/CLAUDE.md' },
+    ];
+    let totalTokens = 0;
+    const breakdown = [];
+    for (const { file, label } of claudeMdPaths) {
+      if (fs.existsSync(file)) {
+        const size = fs.readFileSync(file, 'utf-8').length;
+        const tokens = Math.round(size / 4); // ~4 chars per token
+        totalTokens += tokens;
+        breakdown.push(`${label}: ~${tokens.toLocaleString()} tokens`);
+      }
+    }
+    if (totalTokens > 1000) {
+      const msgsToday = (stats?.dailyActivity || []).slice(-1)[0]?.messageCount || 0;
+      const opusPrice = 15 / 1_000_000;
+      const dailyCost = msgsToday * totalTokens * opusPrice;
+      const severity = totalTokens > 4000 ? 'critical' : totalTokens > 2000 ? 'warning' : 'info';
+      insights.push({
+        _live: true,
+        severity,
+        title: `CLAUDE.md adds ~${totalTokens.toLocaleString()} tokens to every message${dailyCost > 0.05 ? ` (~$${dailyCost.toFixed(2)}/day)` : ''}`,
+        detail: `Your global instructions are included in every prompt. ${breakdown.join(', ')}. The larger these files, the more every conversation costs — even quick questions.`,
+        action: 'Move project-specific rules into per-project CLAUDE.md files. Keep the global ~/.claude/CLAUDE.md focused on truly universal preferences only.',
+      });
+    }
+  } catch {}
+
+  // ─── Repeated Tool Call Detection (#54) ───────────────────
+  try {
+    const recentEvents = events.readEvents({ limit: 500 });
+    const toolCalls = recentEvents.filter(e => e.type === 'tool_call');
+
+    // Group by session, then find repeated file reads and bash commands
+    const bySession = {};
+    for (const ev of toolCalls) {
+      const sid = ev.session_id || 'unknown';
+      if (!bySession[sid]) bySession[sid] = [];
+      bySession[sid].push(ev);
+    }
+
+    const repeatedReads = {}; // "filepath" -> count across all sessions today
+    const repeatedBash = {};  // "command_prefix" -> count
+
+    for (const calls of Object.values(bySession)) {
+      const readCounts = {};
+      const bashCounts = {};
+      for (const ev of calls) {
+        if (ev.tool === 'Read') {
+          // Extract file path from summary like "write /path/to/file" or just the path
+          const fp = (ev.summary || '').replace(/^(read|write|edit)\s+/i, '').trim().slice(0, 80);
+          if (fp) readCounts[fp] = (readCounts[fp] || 0) + 1;
+        }
+        if (ev.tool === 'Bash') {
+          const cmd = (ev.summary || '').slice(0, 50).trim();
+          if (cmd) bashCounts[cmd] = (bashCounts[cmd] || 0) + 1;
+        }
+      }
+      for (const [fp, count] of Object.entries(readCounts)) {
+        if (count >= 3) repeatedReads[fp] = Math.max(repeatedReads[fp] || 0, count);
+      }
+      for (const [cmd, count] of Object.entries(bashCounts)) {
+        if (count >= 3) repeatedBash[cmd] = Math.max(repeatedBash[cmd] || 0, count);
+      }
+    }
+
+    const topReads = Object.entries(repeatedReads).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const topBash = Object.entries(repeatedBash).sort((a, b) => b[1] - a[1]).slice(0, 2);
+
+    if (topReads.length > 0) {
+      const examples = topReads.map(([fp, n]) => `"${fp.split('/').pop()}" ×${n}`).join(', ');
+      insights.push({
+        _live: true,
+        severity: 'warning',
+        title: `Repeated file reads detected: ${examples}`,
+        detail: `The same files are being read multiple times per session. Each re-read sends the full file content again, wasting tokens. Files: ${topReads.map(([fp, n]) => `${fp} (×${n})`).join('; ')}.`,
+        action: 'Read files once and keep results in context. Use the Read tool at the start of a task, not repeatedly throughout.',
+      });
+    }
+    if (topBash.length > 0) {
+      const examples = topBash.map(([cmd, n]) => `"${cmd.slice(0, 30)}" ×${n}`).join(', ');
+      insights.push({
+        _live: true,
+        severity: 'info',
+        title: `Repeated commands detected: ${examples}`,
+        detail: `The same shell commands are running multiple times. Repeated polling or status checks burn tokens without adding new information.`,
+        action: 'Cache command output where possible. Avoid re-running the same diagnostic commands — read the result once and proceed.',
+      });
+    }
+  } catch {}
 
   // ─── Rate Limit Analysis ───────────────────────────────────
   if (dailyLogs) {
