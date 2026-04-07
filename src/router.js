@@ -19,7 +19,13 @@ const TASK_FAMILIES = {
 };
 
 const PATTERNS = {
-  search: ['search', 'find', 'grep', 'look up', 'scan', 'where is', 'which file', 'locate', 'list', 'show me', 'what is', 'read', 'check', 'inspect', 'explore', 'browse', 'reference', 'references'],
+  search: [
+    'search', 'find', 'grep', 'look up', 'scan', 'where is', 'which file',
+    'locate', 'list', 'show me', 'what is', 'read', 'check', 'inspect',
+    'explore', 'browse', 'reference', 'references',
+    'look at',                 // "look at the error log"
+    'where is the', 'where are the', // boost search score vs question "is the" overlap
+  ],
   question: [
     // Classic interrogatives
     'how do', 'how does', 'how is', 'how are', 'how would',
@@ -35,24 +41,127 @@ const PATTERNS = {
     'any thoughts', 'thoughts on', 'what do you think',
     'does this', 'does that', 'how many', 'is there a', 'is the',
     'summarize', 'describe', 'explain',
+    // Does-X patterns: "does the learner track...", "does it update..."
+    'does the', 'does it', 'does my',
+    // Curiosity and wondering
+    'wondering', 'curious', 'i wonder',
+    'any idea', 'any reason', 'any chance',
+    'just checking', 'just wondering', 'quick question',
+    'out of curiosity', 'is it possible', 'is it safe', 'is it ok',
+    'remind me',
+    // Specific conceptual questions (more specific than bare "what is" → beat search in score)
+    'what is the difference', 'what is the best', 'what is the purpose', 'what is the reason',
   ],
-  review: ['review', 'audit', 'compare', 'benchmark', 'analyze', 'assess', 'evaluate', 'check quality', 'code review', 'look over'],
-  plan: ['plan', 'design', 'spec', 'roadmap', 'outline', 'strategy', 'approach', 'how should', 'what approach', 'propose'],
+  review: [
+    'review', 'audit', 'compare', 'benchmark', 'analyze', 'assess',
+    'evaluate', 'check quality', 'code review', 'look over',
+    // Informal review requests
+    'take a look', 'quick look', 'have a look',
+    'once over', 'sanity check',
+    'does this look', 'anything jump',
+    'second opinion',
+  ],
+  plan: [
+    'plan', 'design', 'spec', 'roadmap', 'outline', 'strategy', 'approach',
+    'how should', 'what approach', 'propose',
+    // Collaborative planning language
+    "let's", 'lets', 'map out', 'figure out', 'think through',
+    'brainstorm', 'rethink', 'we should',
+  ],
   architecture: ['architecture', 'system design', 'infrastructure', 'database schema', 'data model', 'migration strategy', 'scalability'],
   edit: ['fix', 'edit', 'update', 'change', 'modify', 'implement', 'refactor', 'write', 'rewrite', 'create', 'add', 'remove', 'delete', 'rename', 'move', 'replace', 'make', 'overhaul'],
   debug: [
-    // Classic keywords
-    'bug', 'broken', 'debug', 'failure', 'regression', 'not working', 'fails', 'wrong', 'issue', 'problem', 'unexpected',
+    // Classic keywords (removed 'issue' — too ambiguous with GitHub issues)
+    'bug', 'broken', 'debug', 'failure', 'regression', 'not working', 'fails', 'wrong', 'problem', 'unexpected',
     // Inflected forms (word boundary blocks suffix matching)
     'crash', 'crashes', 'crashing',
-    // Natural language symptom descriptions — specific enough not to collide with search
-    'not updating', 'not appearing', 'not firing', 'not showing', 'not loading',
-    'keeps', 'still not', 'never fires', 'never reaches',
+    // Natural language symptom descriptions
+    'not updating', 'not appearing', 'not firing', 'not fire', 'not showing', 'not loading',
+    'not clearing', 'not triggering', 'not triggered', 'not running', 'not saving',
+    // Still/keeps/never patterns
+    'keeps', 'still not', 'still showing', 'still getting', 'still going', 'still routing',
+    'never fires', 'never reaches', 'never reached', 'never called', 'never triggered',
+    // Contraction-based behavioral symptoms
+    "isn't", 'isnt', "doesn't", 'doesnt', "didn't", 'didnt', "won't", 'wont',
+    // Behavioral anomaly indicators
+    // NOTE: "instead of" is weak — only triggers debug when no edit word competes (no debug+edit).
+    // "going to haiku instead of sonnet" (no edit word) → debug ✓
+    // "change X to use Y instead of Z" (edit word: change) → falls through to code_edit ✓
+    'instead of',
+    'stopped', 'hangs', 'stuck',
+    'blank', 'nothing is', 'nothing shows', 'nothing works',
+    // Return value failures
+    'returns null', 'returns undefined', 'returns false',
+    // Specific diagnostic indicators
+    'dead code', 'unreachable', 'NaN',
+    'way off', 'off by',
+    // Context/contrast words (weak — only fire when no competing edit action)
+    'despite', 'even though', 'even when',
+    "don't know why", 'dont know why', 'not sure why',
+    'seems to not', 'appears to not',
+    'every single', 'every time',   // "fires every single prompt" = repeating bug
+    'issue is',                      // "the issue is that X" = problem description
   ],
   command: ['run', 'execute', 'deploy', 'build', 'test', 'install', 'start', 'stop', 'restart', 'migrate', 'merge', 'push', 'pull'],
   complex: ['multi-file', 'across', 'full app', 'entire', 'all files', 'whole codebase', 'whole', 'comprehensive', 'complete', 'overhaul', 'rewrite', 'from scratch', 'system-wide', 'system wide'],
   simple: ['typo', 'rename', 'one line', 'small', 'quick', 'simple', 'just', 'only'],
 };
+
+// Opinion-seeking questions override plan/review/edit (the user wants your view, not action).
+const OPINION_QUESTION_PATTERNS = [
+  'what do you think', 'do you think',
+  'what would you recommend', 'what would you',
+  'what would happen',
+  'wondering', 'curious',          // "wondering if we need..." = curiosity, not planning
+  'just checking', 'just wondering', // "just checking if this is right" = validation question
+];
+
+// Info-seeking interrogatives override edit/command but NOT plan/review.
+// "how do I change X" = asking for instructions, not requesting a change.
+// "should we merge" = asking for a recommendation, not issuing the command.
+const INFO_QUESTION_PATTERNS = [
+  'how do i', 'how do you',
+  'should we', 'should i',
+  'can you explain', 'help me understand',
+  'does the', 'does it', 'does my',  // "does the hook reset" = asking not commanding
+  'is it possible', 'is it safe', 'is it ok',
+];
+
+// Short conversational responses that aren't task requests.
+const CONVERSATIONAL_PATTERNS = [
+  'i like', 'i love', 'i agree', 'looks good', 'sounds good',
+  'that sounds', 'that looks', 'great idea', 'good idea', 'makes sense',
+];
+
+// Strong debug signals used for the debug+edit branch.
+// "instead of", "despite", etc. are "weak" debug — valid for debug-only (no competing edit)
+// but not strong enough to override a clear code-edit action.
+const STRONG_DEBUG_SIGNALS = [
+  'bug', 'broken', 'debug', 'failure', 'regression', 'not working', 'fails', 'wrong',
+  'problem', 'unexpected',
+  'crash', 'crashes', 'crashing',
+  'not updating', 'not appearing', 'not firing', 'not fire', 'not showing', 'not loading',
+  'not clearing', 'not triggering', 'not triggered', 'not running', 'not saving',
+  'keeps', 'still not', 'still showing', 'still getting', 'still going', 'still routing',
+  'never fires', 'never reaches', 'never reached', 'never called', 'never triggered',
+  "isn't", 'isnt', "doesn't", 'doesnt', "didn't", 'didnt', "won't", 'wont',
+  'stopped', 'hangs', 'stuck',
+  'blank', 'nothing is', 'nothing shows', 'nothing works',
+  'returns null', 'returns undefined', 'returns false',
+  'dead code', 'unreachable', 'NaN',
+  'way off', 'off by',
+  'seems to not', 'appears to not',
+  'every single', 'every time',   // "appears every single prompt" = repeating bug
+  'issue is',                      // "the issue is that X" = problem description
+  "don't know why", 'dont know why', 'not sure why',
+];
+
+// Primary edit actions — strong enough to override a review signal.
+// "delete the X" or "implement the X" are unambiguously code changes, not reviews.
+const PRIMARY_EDIT_ACTIONS = ['delete', 'remove', 'create', 'implement', 'rewrite'];
+
+// Primary command verbs — strong enough to override a review signal.
+const PRIMARY_COMMAND_VERBS = ['execute', 'deploy', 'migrate'];
 
 function matchesWord(text, pattern) {
   // Match whole words/phrases, not substrings (e.g. "check" shouldn't match "checkout")
@@ -114,24 +223,74 @@ function classifyTask(task = '') {
     command: countMatches(text, PATTERNS.command),
   };
 
-  // Classify by primary intent -- check actionable intents first
-  if (matchesAny(text, PATTERNS.architecture)) {
+  // Pre-computed helpers for the priority chain
+  const strongDebugScore = countMatches(text, STRONG_DEBUG_SIGNALS);
+  const isOpinionQuestion = matchesAny(text, OPINION_QUESTION_PATTERNS);
+  const isInfoQuestion = matchesAny(text, INFO_QUESTION_PATTERNS);
+  // Conversational affirmations ("i like this", "looks good") with no real task
+  const isConversational = matchesAny(text, CONVERSATIONAL_PATTERNS) && words.length <= 8;
+  // Primary edit/command actions that override a review signal
+  const hasPrimaryEdit = matchesAny(text, PRIMARY_EDIT_ACTIONS);
+  const hasPrimaryCommand = matchesAny(text, PRIMARY_COMMAND_VERBS);
+
+  // ── Priority chain ──────────────────────────────────────────────────────────
+  // Order matters: first matching branch wins.
+
+  if (isConversational) {
+    // "i like this", "looks good" — conversational, not a task
+    family = TASK_FAMILIES.UNKNOWN;
+    confidence = 0.5;
+    reasons.push('conversational affirmation -- no task');
+  } else if (isOpinionQuestion && !matchesAny(text, PATTERNS.debug)) {
+    // Opinion-seeking questions beat EVERYTHING (including architecture) unless there's
+    // a debug signal. "what do you think about this architecture" = question, not arch.
+    // "do you think the bug is in learner.js" = question (debug context handled below).
+    family = TASK_FAMILIES.QUESTION;
+    complexity = isComplex ? 'medium' : 'low';
+    confidence = 0.85;
+    reasons.push('question -- opinion-seeking');
+  } else if (matchesAny(text, PATTERNS.architecture)) {
     family = TASK_FAMILIES.ARCHITECTURE;
     complexity = 'high';
     confidence = 0.85;
     reasons.push('architectural decision -- needs deep reasoning');
-  } else if (scores.debug >= 1 && scores.edit >= 1) {
+  } else if (strongDebugScore >= 1 && scores.edit >= 1) {
+    // Strong debug signal + edit action = debug+edit (e.g. "fix the bug", "fix dead code")
+    // Weak debug signals like "instead of"/"despite" don't trigger this branch,
+    // preventing "change X instead of Y" from being misrouted as debug.
     family = TASK_FAMILIES.DEBUG;
     complexity = isComplex ? 'high' : isSimple ? 'low' : 'medium';
     confidence = 0.8;
     reasons.push('debugging task -- needs reasoning + code changes');
-  } else if (scores.debug >= 1) {
+  } else if (scores.debug >= 1 && scores.edit === 0) {
+    // Debug signal with no competing edit action (e.g. "the hook isn't firing")
     family = TASK_FAMILIES.DEBUG;
     complexity = isComplex ? 'high' : isSimple ? 'low' : 'medium';
     confidence = 0.7;
     reasons.push('investigation/debug task -- diagnostic reasoning');
+  } else if (scores.plan >= 1) {
+    // Plan before edit/command: "design X" / "let's figure out" / "what approach should we"
+    // are planning tasks even when action words (build, test) appear as context.
+    family = TASK_FAMILIES.PLAN;
+    complexity = isComplex ? 'high' : 'medium';
+    confidence = 0.72;
+    reasons.push('planning/design task');
+  } else if (scores.review >= 1 && !hasPrimaryEdit && !hasPrimaryCommand) {
+    // Review before edit/command: "look over X before merging" is still a review.
+    // Exception: hasPrimaryEdit ("delete", "implement") or hasPrimaryCommand ("execute", "deploy")
+    // means the edit/command IS the primary intent.
+    family = TASK_FAMILIES.REVIEW;
+    complexity = isComplex ? 'high' : 'medium';
+    confidence = 0.75;
+    reasons.push('code review/audit task');
+  } else if (isInfoQuestion) {
+    // Info-seeking interrogatives ("how do I", "should we") beat edit/command
+    // but lose to plan/review so "what approach should we take" stays as plan.
+    family = TASK_FAMILIES.QUESTION;
+    complexity = isComplex ? 'medium' : 'low';
+    confidence = 0.82;
+    reasons.push('question -- info-seeking interrogative');
   } else if (scores.edit >= 1 || scores.command >= 1) {
-    // Edit/build/command tasks take priority over search when both match
     if (isComplex || scores.edit >= 2 || (scores.command >= 1 && isComplex)) {
       family = TASK_FAMILIES.MULTI_FILE;
       complexity = 'high';
@@ -148,21 +307,21 @@ function classifyTask(task = '') {
       confidence = 0.7;
       reasons.push('code edit -- bounded changes');
     }
-  } else if (scores.review >= 1) {
-    family = TASK_FAMILIES.REVIEW;
-    complexity = isComplex ? 'high' : 'medium';
-    confidence = 0.75;
-    reasons.push('code review/audit task');
-  } else if (scores.plan >= 1) {
-    family = TASK_FAMILIES.PLAN;
-    complexity = isComplex ? 'high' : 'medium';
-    confidence = 0.72;
-    reasons.push('planning/design task');
   } else if (scores.search >= 1) {
-    family = TASK_FAMILIES.SEARCH_READ;
-    complexity = isComplex ? 'medium' : 'low';
-    confidence = 0.85;
-    reasons.push('discovery/search task -- read-only');
+    // Question beats search when question scores higher (more specific match).
+    // e.g. "what is the difference between X and Y": question=2 (what is the, what is the difference)
+    // vs search=1 (what is) → question wins.
+    if (scores.question > scores.search) {
+      family = TASK_FAMILIES.QUESTION;
+      complexity = isComplex ? 'medium' : 'low';
+      confidence = 0.78;
+      reasons.push('question -- outscored search signals');
+    } else {
+      family = TASK_FAMILIES.SEARCH_READ;
+      complexity = isComplex ? 'medium' : 'low';
+      confidence = 0.85;
+      reasons.push('discovery/search task -- read-only');
+    }
   } else if (scores.question >= 1) {
     family = TASK_FAMILIES.QUESTION;
     complexity = isComplex ? 'medium' : 'low';

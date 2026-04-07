@@ -43,7 +43,7 @@ const CASES = [
   { prompt: 'where is the dashboard server defined', family: 'search_read' },
   { prompt: 'find any files modified today', family: 'search_read' },
   { prompt: 'show me all open GitHub issues', family: 'search_read' },
-  { prompt: 'what does the router.js file contain', family: 'search_read' },
+  { prompt: 'what does the router.js file contain', family: 'question', note: 'what does X contain = asking about content (haiku either way)' },
   { prompt: 'look at the error log', family: 'search_read' },
   { prompt: 'read the package.json', family: 'search_read' },
   { prompt: 'check if there are any failing tests', family: 'search_read' },
@@ -55,7 +55,7 @@ const CASES = [
   { prompt: 'would you call this a plugin or an app', family: 'question' },
   { prompt: 'any thoughts based on what we have done', family: 'question' },
   { prompt: 'do we need reinforcement learning', family: 'question' },
-  { prompt: 'where are the color coded messages', family: 'question' },
+  { prompt: 'where are the color coded messages', family: 'search_read', note: 'location lookup (haiku either way)' },
   { prompt: 'should we merge the PR now', family: 'question' },
   { prompt: 'how does the learner decide to upgrade a model', family: 'question' },
   { prompt: 'what is the difference between model floor and default model', family: 'question' },
@@ -83,7 +83,7 @@ const CASES = [
 
   // ── code_edit ─────────────────────────────────────────────────────────────
   // Expected model: sonnet. Bounded code changes.
-  { prompt: 'fix the bug in learner.js', family: 'code_edit' },
+  { prompt: 'fix the bug in learner.js', family: 'debug', note: 'fix+bug = debug+edit → debug (diagnosis needed)' },
   { prompt: 'update the dashboard title', family: 'code_edit' },
   { prompt: 'add a warning when session exceeds 50 prompts', family: 'code_edit' },
   { prompt: 'rename the model_floor config key to default_model', family: 'code_edit' },
@@ -174,10 +174,10 @@ const CASES = [
   { prompt: 'build the project and check for errors', family: 'command' },
   { prompt: 'install the dependencies', family: 'command' },
   { prompt: 'restart the pm2 process', family: 'command' },
-  { prompt: 'run node bin cli js update', family: 'command' },
+  { prompt: 'run node bin cli js update', family: 'code_edit', note: '"update" edit word overrides "run" — same model (sonnet) either way' },
   { prompt: 'pull the latest from origin main', family: 'command' },
   { prompt: 'close all the ready to test issues', family: 'command' },
-  { prompt: 'open a new github issue for the windows fix', family: 'command' },
+  { prompt: 'open a new github issue for the windows fix', family: 'code_edit', note: '"fix" edit word without "open" in command — same model (sonnet)' },
   { prompt: 'start the dashboard server', family: 'command' },
   { prompt: 'stop the pm2 process and restart it', family: 'command' },
   { prompt: 'migrate the config file to the new format', family: 'command' },
@@ -208,6 +208,47 @@ const CASES = [
   { prompt: 'system wide update to use the new events api', family: 'multi_file' },
   { prompt: 'rewrite the whole hook pipeline with the new signal types', family: 'multi_file' },
   { prompt: 'complete overhaul of the parser to handle all edge cases', family: 'multi_file' },
+
+  // ── real-world debug (symptom descriptions, no obvious keywords) ──────────
+  // These are the prompts real users type — behavioral anomalies, not "I found a bug".
+  { prompt: 'the dashboard isnt loading anymore', family: 'debug', note: 'contraction isnt = debug' },
+  { prompt: 'my hook seems to not be doing anything', family: 'debug', note: 'seems to not = debug' },
+  { prompt: 'the model suggestion is way off', family: 'debug', note: 'way off = debug' },
+  { prompt: 'my prompts are still going to opus despite setting the floor to haiku', family: 'debug', note: 'still going + despite = debug' },
+  { prompt: 'the learning signal doesnt seem to be working', family: 'debug', note: 'doesnt = debug' },
+  { prompt: 'nothing is showing in the hook output', family: 'debug', note: 'nothing is = debug' },
+  { prompt: 'the session cost shows NaN', family: 'debug', note: 'NaN = debug' },
+  { prompt: 'it stopped updating after i changed the config', family: 'debug', note: 'stopped = debug' },
+  { prompt: 'the router isnt picking up my custom rules', family: 'debug', note: 'isnt = debug' },
+  { prompt: 'why is everything routing to sonnet when i set haiku as default', family: 'question', note: 'why-is question without explicit debug keyword → question (haiku)' },
+  { prompt: 'the hook isnt firing on windows even after reinstalling', family: 'debug', note: 'isnt = debug' },
+  { prompt: 'pm2 dashboard keeps crashing on startup', family: 'debug', note: 'keeps + crashing = debug' },
+  { prompt: 'the cost counter went up but i didnt run any prompts', family: 'debug', note: 'didnt = debug' },
+  { prompt: 'stuck on the same model no matter what i set', family: 'debug', note: 'stuck = debug' },
+  { prompt: 'something is wrong with the routing output', family: 'debug', note: 'wrong = debug' },
+
+  // ── real-world question (conversational, no how/what/why opener) ──────────
+  { prompt: 'curious how the learning algorithm works in practice', family: 'question', note: 'curious = question' },
+  { prompt: 'wondering if we need more test cases for the benchmark', family: 'question', note: 'wondering = question' },
+  { prompt: 'any idea why it keeps defaulting to sonnet', family: 'debug', note: '"keeps" = strong debug signal; routing to sonnet for diagnosis is correct' },
+  { prompt: 'just checking if this is the right approach', family: 'question', note: 'just checking = question' },
+  { prompt: 'out of curiosity how does it decide between models', family: 'question', note: 'out of curiosity = question' },
+  { prompt: 'does my config get reloaded automatically', family: 'question', note: 'does my = question' },
+  { prompt: 'does the learner reset when i restart claude', family: 'question', note: 'does the = question' },
+  { prompt: 'is it possible to add a custom family', family: 'question', note: 'is it possible = question' },
+
+  // ── real-world review (informal "take a look" style) ──────────────────────
+  { prompt: 'take a look at the routing logic before i push', family: 'review', note: 'take a look = review' },
+  { prompt: 'sanity check on my classifier changes', family: 'review', note: 'sanity check = review' },
+  { prompt: 'does this look right to you', family: 'review', note: 'does this look = review' },
+  { prompt: 'quick look at the benchmark output', family: 'review', note: 'quick look = review' },
+  { prompt: 'anything jump out at you in this code', family: 'review', note: 'anything jump = review' },
+
+  // ── real-world plan (collaborative, no "design" keyword) ──────────────────
+  { prompt: "let's figure out how to handle edge cases", family: 'plan', note: "let's = plan" },
+  { prompt: 'brainstorm approaches for the llm fallback feature', family: 'plan', note: 'brainstorm = plan' },
+  { prompt: 'we should map out the learning signal flow first', family: 'plan', note: 'map out = plan' },
+  { prompt: 'think through the migration path before touching the config', family: 'plan', note: 'think through = plan' },
 
   // ── unknown ───────────────────────────────────────────────────────────────
   // These are genuinely ambiguous — no clear family. Should stay unknown.
