@@ -314,6 +314,71 @@ function buildDashboardData() {
       ? (todayDispatches.length / todayDecisions.length * 100) : 0;
   }
 
+  // Build per-day breakdown from recentEvents (already loaded, no limit)
+  const dailyBreakdown = {};
+  for (const ev of recentEvents) {
+    if (!ev.ts) continue;
+    const day = ev.ts.slice(0, 10);
+    if (!dailyBreakdown[day]) dailyBreakdown[day] = { date: day, decisions: 0, dispatches: 0, models: { opus: 0, sonnet: 0, haiku: 0 }, cost: 0 };
+    const d = dailyBreakdown[day];
+    if (ev.type === 'routing_decision') {
+      d.decisions++;
+      const m = ev.recommended_model || 'sonnet';
+      d.models[m] = (d.models[m] || 0) + 1;
+    }
+    if (ev.type === 'subagent_dispatch') d.dispatches++;
+  }
+  // Rough per-call cost estimates
+  const MODEL_COST = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
+  for (const d of Object.values(dailyBreakdown)) {
+    d.cost = (d.models.opus || 0) * MODEL_COST.opus + (d.models.sonnet || 0) * MODEL_COST.sonnet + (d.models.haiku || 0) * MODEL_COST.haiku;
+    d.delegationRate = d.decisions > 0 ? Math.round(d.dispatches / d.decisions * 100) : 0;
+  }
+  const dailyBreakdownArr = Object.values(dailyBreakdown).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
+
+  // Compute efficiency analysis
+  function computeAnalysis(todayTokenUsage, recentEvts, routingData) {
+    const bm = todayTokenUsage?.byModel || {};
+    const opusCalls = bm.opus?.calls || 0;
+    const sonnetCalls = bm.sonnet?.calls || 0;
+    const haikuCalls = bm.haiku?.calls || 0;
+    const totalCalls = opusCalls + sonnetCalls + haikuCalls;
+    const cheapPct = totalCalls > 0 ? Math.round((sonnetCalls + haikuCalls) / totalCalls * 100) : 0;
+    const opusPct = totalCalls > 0 ? Math.round(opusCalls / totalCalls * 100) : 0;
+    const haikuPct = totalCalls > 0 ? Math.round(haikuCalls / totalCalls * 100) : 0;
+    const delegationRate = routingData?.delegationRate || 0;
+    const todayCost = todayTokenUsage?.totalCost || 0;
+    const sessions = todayTokenUsage?.bySession || {};
+    const sessionList = Object.entries(sessions);
+    const longSessions = sessionList.filter(([, s]) => (s.calls || 0) > 30);
+
+    // Determine grade
+    let grade, gradeSummary;
+    if (totalCalls === 0) {
+      grade = null; gradeSummary = 'No activity yet today';
+    } else if (cheapPct >= 70 && delegationRate >= 30) {
+      grade = 'A'; gradeSummary = `${cheapPct}% of tasks on sonnet/haiku — excellent routing`;
+    } else if (cheapPct >= 50) {
+      grade = 'B'; gradeSummary = `${cheapPct}% on cheaper models — good, room to improve`;
+    } else if (cheapPct >= 30) {
+      grade = 'C'; gradeSummary = `${opusPct}% of calls on opus — routing underutilised`;
+    } else {
+      grade = 'D'; gradeSummary = `${opusPct}% opus — most tasks could use cheaper models`;
+    }
+
+    // Build tips
+    const tips = [];
+    if (opusPct > 50 && totalCalls > 0) tips.push('Most tasks are running on opus. Start sessions with the sonnet model to let routing kick in.');
+    if (longSessions.length > 0) tips.push(`${longSessions.length} session${longSessions.length > 1 ? 's' : ''} exceeded 30 prompts. Use /compact or start fresh to reduce context costs.`);
+    if (delegationRate < 20 && totalCalls > 5) tips.push('Delegation rate is low. Task-type hints in prompts (e.g. "search for…", "read this file") help the router pick cheaper models.');
+    if (haikuPct < 5 && totalCalls > 10) tips.push('Haiku is rarely used. Simple lookups, searches, and reads are good haiku candidates.');
+    if (todayCost > 3) tips.push(`High spend today ($${todayCost.toFixed(2)}). Check the Token hogs panel to find the biggest consumers.`);
+
+    return { grade, gradeSummary, tips: tips.slice(0, 3), totalCalls, cheapPct, opusPct, delegationRate };
+  }
+
+  const analysis = computeAnalysis(parser.readSessionTokenUsage(), recentEvents, routing);
+
   return {
     stats: {
       totalSessions: liveStats.totalSessions,
@@ -370,6 +435,10 @@ function buildDashboardData() {
     },
     // User config (for dashboard UI controls)
     config: config.read(),
+    // Per-day routing breakdown (last 30 days)
+    dailyBreakdown: dailyBreakdownArr,
+    // Efficiency analysis / grading
+    analysis,
   };
 }
 

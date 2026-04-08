@@ -115,6 +115,17 @@
   .hooks-on { color: var(--accent) !important; border-color: var(--accent-muted) !important; }
   .hooks-off { color: var(--danger) !important; border-color: var(--danger) !important; opacity: 0.7; }
 
+  .analysis-card { margin-bottom: 12px; }
+  .analysis-grade { font-family: var(--mono); font-size: 28px; font-weight: 700; line-height: 1; }
+  .grade-A { color: #2d7a2d; } [data-theme="dark"] .grade-A { color: #5cb85c; }
+  .grade-B { color: var(--accent); }
+  .grade-C { color: #c07000; } [data-theme="dark"] .grade-C { color: #e09030; }
+  .grade-D { color: var(--danger); }
+  .analysis-summary { font-size: 13px; color: var(--muted); margin-left: 10px; }
+  .analysis-tips { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--separator); }
+  .analysis-tip { font-size: 12px; color: var(--dim); padding: 4px 0; display: flex; gap: 6px; }
+  .analysis-tip::before { content: '→'; color: var(--accent-muted); flex-shrink: 0; }
+
   /* ─── Metrics bar ────────────────────────── */
   .metrics {
     display: flex; gap: 12px 20px; margin-bottom: 28px; flex-wrap: wrap;
@@ -366,6 +377,17 @@ function getTheme() { return localStorage.getItem('token-coach-theme') || 'dark'
 function setTheme(t) { localStorage.setItem('token-coach-theme', t); document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : ''); }
 function toggleTheme() { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); render(); }
 
+function toggleAnalysis() {
+  const body = document.getElementById('v-analysis-body');
+  const card = document.getElementById('v-analysis-card');
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  localStorage.setItem('analysis-open', !isOpen);
+  const hd = card?.querySelector('.card-hd');
+  if (hd) hd.setAttribute('aria-expanded', !isOpen);
+}
+
 async function toggleHooks() {
   const btn = document.getElementById('v-hooks-btn');
   if (btn) btn.textContent = '...';
@@ -417,6 +439,8 @@ function softRefresh() {
   setText('v-hogs-ct', ((D.tokenHogs?.totalToolCalls||0) + (D.tokenHogs?.totalDispatches||0)) + ' calls');
   setSection('v-hogs-body', renderTokenHogs(D.tokenHogs));
   setSection('v-hours', renderHourGrid(s.hourCounts));
+  if (D.analysis?.grade) setText('v-analysis-grade', `Grade ${D.analysis.grade}`);
+  setSection('v-analysis-body', renderAnalysis(D.analysis));
 }
 
 async function load() {
@@ -438,6 +462,7 @@ function modelLabel(m) {
 }
 
 function getEffectiveTab() {
+  if (timelineTab === 'daily') return 'daily';
   if (timelineTab !== 'auto') return timelineTab;
   return DATA?.routing?.todayStats?.totalTasks > 0 ? 'today' : 'all';
 }
@@ -478,6 +503,14 @@ function buildHTML() {
 
     </section>
 
+    <div class="card analysis-card anim d1" id="v-analysis-card">
+      <div class="card-hd" onclick="toggleAnalysis()" style="cursor:pointer;user-select:none" role="button" aria-expanded="${localStorage.getItem('analysis-open') !== 'false'}" aria-controls="v-analysis-body">
+        <h2>Efficiency analysis</h2>
+        <span class="ct" id="v-analysis-grade">${D.analysis?.grade ? `Grade ${D.analysis.grade}` : 'No data'}</span>
+      </div>
+      <div id="v-analysis-body" style="display:${localStorage.getItem('analysis-open') === 'false' ? 'none' : 'block'}">${renderAnalysis(D.analysis)}</div>
+    </div>
+
     <div class="card anim d1" style="margin-bottom:12px">
       <div class="card-hd">
         <h2>Did routing pay for itself?</h2>
@@ -509,6 +542,7 @@ function buildHTML() {
         <div class="tabs" role="tablist" aria-label="Timeline time range">
           <button class="tab ${tab==='today'?'on':''}" onclick="setTab('today')" id="v-tab-today" role="tab" aria-selected="${tab==='today'}" aria-controls="v-timeline">Today (${today.totalTasks})</button>
           <button class="tab ${tab==='all'?'on':''}" onclick="setTab('all')" role="tab" aria-selected="${tab==='all'}" aria-controls="v-timeline">All time</button>
+          <button class="tab ${tab==='daily'?'on':''}" onclick="setTab('daily')" role="tab" aria-selected="${tab==='daily'}" aria-controls="v-timeline">Daily</button>
         </div>
         <div class="filters" role="toolbar" aria-label="Filter by model">
           <button class="flt ${activeFilter==='all'?'on':''}" onclick="setFilter('all')" aria-pressed="${activeFilter==='all'}">all</button>
@@ -590,6 +624,42 @@ function render() {
 }
 
 /* ─── Renderers ─────────────────────────────── */
+
+function renderAnalysis(a) {
+  if (!a || !a.grade) return '<div style="font-size:12px;color:var(--dim)">No activity yet today — analysis will appear once routing decisions are made.</div>';
+  const tips = a.tips || [];
+  return `
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+      <span class="analysis-grade grade-${a.grade}">${a.grade}</span>
+      <span class="analysis-summary">${esc(a.gradeSummary)}</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--dim);font-family:var(--mono)">${a.totalCalls} calls · ${a.cheapPct}% cheap · ${a.delegationRate}% delegated</span>
+    </div>
+    ${tips.length && a.grade !== 'A' ? `<div class="analysis-tips">${tips.map(t => `<div class="analysis-tip">${esc(t)}</div>`).join('')}</div>` : ''}
+  `;
+}
+
+function renderDaily() {
+  const days = DATA?.dailyBreakdown;
+  if (!days || !days.length) return '<div class="empty">No daily data yet</div>';
+  return days.map(d => {
+    const total = (d.models.opus||0) + (d.models.sonnet||0) + (d.models.haiku||0);
+    return `<div class="tl-row">
+      <div class="tl-time">${d.date.slice(5)}</div>
+      <div class="tl-model" style="min-width:90px">
+        <span style="font-family:var(--mono);font-size:12px">${d.decisions} tasks</span>
+      </div>
+      <div class="tl-body">
+        <div class="tl-desc" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          ${d.models.opus ? `<span class="ml ml-opus">opus×${d.models.opus}</span>` : ''}
+          ${d.models.sonnet ? `<span class="ml ml-sonnet">sonnet×${d.models.sonnet}</span>` : ''}
+          ${d.models.haiku ? `<span class="ml ml-haiku">haiku×${d.models.haiku}</span>` : ''}
+          <span style="color:var(--dim);font-size:11px">$${d.cost.toFixed(2)}</span>
+          ${d.delegationRate > 0 ? `<span style="color:var(--accent);font-size:11px">${d.delegationRate}% routed</span>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
 
 function renderSavings(savings) {
   if (!savings) return '<div class="empty">No savings data yet.</div>';
@@ -702,6 +772,7 @@ function setFloor(floor) {
 
 function renderTimeline(tab) {
   if (!DATA) return '';
+  if (tab === 'daily') return renderDaily();
   const r = DATA.routing;
   let entries = tab === 'today' ? (r.todayStats.tasks || []) : DATA.taskLog;
   if (activeFilter !== 'all') entries = entries.filter(t => t.model.includes(activeFilter));
