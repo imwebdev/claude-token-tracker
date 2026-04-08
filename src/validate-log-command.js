@@ -30,11 +30,26 @@ function runValidateLog(args = []) {
   let csvPath = null;
   let minConfidence = 0;
   let jsonOutput = false;
+  let noLearner = false;
+  let floorOverride = null;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--csv' && args[i + 1]) { csvPath = args[++i]; }
     else if (args[i] === '--min-confidence' && args[i + 1]) { minConfidence = parseFloat(args[++i]) || 0; }
     else if (args[i] === '--json') { jsonOutput = true; }
+    else if (args[i] === '--no-learner') { noLearner = true; }
+    else if (args[i] === '--floor' && args[i + 1]) { floorOverride = args[++i]; }
+  }
+
+  // Bypass learner adjustments if requested — lets you measure base classifier accuracy
+  // without learner noise. Compare with vs without to see learner's actual impact.
+  if (noLearner) {
+    try {
+      const learner = require('./learner');
+      const origGet = learner.getAdjustment;
+      learner.getAdjustment = () => null;
+      process.once('exit', () => { learner.getAdjustment = origGet; });
+    } catch (_) {}
   }
 
   // ── Load task log ──
@@ -69,7 +84,7 @@ function runValidateLog(args = []) {
     if (!groundTruth) continue; // skip rows with unrecognized model fields
 
     const classification = router.classifyTask(rec.description);
-    const recommendation = router.recommendModel(classification);
+    const recommendation = router.recommendModel(classification, floorOverride ? { default_model: floorOverride } : {});
     const predicted = recommendation.model;
 
     if (classification.confidence < minConfidence) continue;
@@ -150,7 +165,10 @@ function runValidateLog(args = []) {
   console.log('');
   console.log(`${bold}Token Coach — Validate Log${reset}`);
   console.log(`${gray}${'─'.repeat(44)}${reset}`);
+  const config = require('./config');
+  const activeFloor = floorOverride || config.read().default_model || 'sonnet';
   console.log(`  ${gray}Records:${reset}  ${total}`);
+  console.log(`  ${gray}Floor:${reset}    ${activeFloor}${floorOverride ? '' : ' (from config — use --floor opus to match historical usage)'}`);
   console.log(`  ${gray}Matched:${reset}  ${green}${matched} (${accuracy}%)${reset}`);
   console.log(`  ${gray}Mismatch:${reset} ${red}${mismatched} (${100 - accuracy}%)${reset}`);
   console.log(`  ${gray}Accuracy:${reset} ${accColor}${bold}${accuracy}%${reset}`);
