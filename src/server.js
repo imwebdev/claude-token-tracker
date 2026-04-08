@@ -448,6 +448,8 @@ function buildDashboardData() {
     },
     // User config (for dashboard UI controls)
     config: config.read(),
+    // Feedback loop stats
+    feedbackStats: events.getFeedbackStats(),
     // Per-day routing breakdown (last 30 days)
     dailyBreakdown: dailyBreakdownArr,
     // Efficiency analysis / grading

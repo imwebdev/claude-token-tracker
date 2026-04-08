@@ -546,6 +546,24 @@ function buildHTML() {
           </div>
         </div>
       </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--separator)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500">Feedback loop</div>
+            <div style="font-size:11px;color:var(--dim);margin-top:2px">Claude occasionally appends "(Was X the right model? y/n)" to collect routing corrections.${D.feedbackStats?.total > 0 ? ` ${D.feedbackStats.total} correction${D.feedbackStats.total === 1 ? '' : 's'} collected${D.feedbackStats.accuracy !== null ? `, ${D.feedbackStats.accuracy}% correct` : ''}.` : ' No corrections yet.'}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+            <button id="v-feedback-btn" class="theme-btn hooks-btn ${D.config?.feedback_loop_enabled ? 'hooks-on' : 'hooks-off'}" onclick="toggleFeedbackLoop()" aria-label="${D.config?.feedback_loop_enabled ? 'Feedback loop enabled — click to disable' : 'Feedback loop disabled — click to enable'}" aria-pressed="${!!D.config?.feedback_loop_enabled}">Feedback ${D.config?.feedback_loop_enabled ? 'ON' : 'OFF'}</button>
+            <div style="display:flex;align-items:center;gap:5px">
+              <span style="font-size:11px;color:var(--dim)">ask</span>
+              <input id="v-feedback-rate" type="number" min="1" max="100" value="${Math.round((D.config?.feedback_loop_sample_rate ?? 0.1) * 100)}"
+                style="width:44px;background:var(--faint);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:13px;color:var(--fg);font-family:var(--mono);text-align:center"
+                onchange="saveFeedbackRate(this.value)" aria-label="Feedback sample rate percent" />
+              <span style="font-size:11px;color:var(--dim)">% of turns</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="g2 anim d2" style="height:560px">
@@ -834,6 +852,30 @@ function saveHistoryDays(val) {
   const days = parseInt(val, 10);
   if (!days || days < 1 || days > 365) return;
   fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ history_days: days }) })
+    .then(r => r.json()).then(cfg => { if (DATA) DATA.config = cfg; })
+    .catch(() => {});
+}
+
+function toggleFeedbackLoop() {
+  const current = DATA?.config?.feedback_loop_enabled || false;
+  const next = !current;
+  fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feedback_loop_enabled: next }) })
+    .then(r => r.json()).then(cfg => {
+      if (DATA) DATA.config = cfg;
+      const btn = document.getElementById('v-feedback-btn');
+      if (btn) {
+        btn.textContent = 'Feedback ' + (next ? 'ON' : 'OFF');
+        btn.className = 'theme-btn hooks-btn ' + (next ? 'hooks-on' : 'hooks-off');
+        btn.setAttribute('aria-label', next ? 'Feedback loop enabled — click to disable' : 'Feedback loop disabled — click to enable');
+        btn.setAttribute('aria-pressed', String(next));
+      }
+    }).catch(() => {});
+}
+
+function saveFeedbackRate(val) {
+  const pct = parseInt(val, 10);
+  if (!pct || pct < 1 || pct > 100) return;
+  fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feedback_loop_sample_rate: pct / 100 }) })
     .then(r => r.json()).then(cfg => { if (DATA) DATA.config = cfg; })
     .catch(() => {});
 }
