@@ -9,7 +9,84 @@ const { getLearningStats } = require('./learner');
 const { calculateCounterfactual, calculateDailySavings } = require('./calculator');
 
 const config = require('./config');
+const os = require('os');
 const PORT = process.env.PORT || config.read().dashboard_port || 6099;
+
+const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
+const HOOK_ROUTER_MARKER = 'hook-router.js';
+const DISABLED_HOOKS_PATH = path.join(os.homedir(), '.token-coach', 'disabled-hooks.json');
+
+function readClaudeSettings() {
+  try { return JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8')); } catch { return {}; }
+}
+
+function writeClaudeSettings(settings) {
+  fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 4), 'utf-8');
+}
+
+function getHooksStatus() {
+  const settings = readClaudeSettings();
+  const hooks = settings.hooks || {};
+  for (const hookList of Object.values(hooks)) {
+    for (const entry of hookList) {
+      for (const h of entry.hooks || []) {
+        if (h.command && h.command.includes(HOOK_ROUTER_MARKER)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function disableHooks() {
+  const settings = readClaudeSettings();
+  const hooks = settings.hooks || {};
+  const removed = {};
+
+  for (const [event, hookList] of Object.entries(hooks)) {
+    const kept = [];
+    const stripped = [];
+    for (const entry of hookList) {
+      const keptHooks = [];
+      const strippedHooks = [];
+      for (const h of entry.hooks || []) {
+        if (h.command && h.command.includes(HOOK_ROUTER_MARKER)) {
+          strippedHooks.push(h);
+        } else {
+          keptHooks.push(h);
+        }
+      }
+      if (strippedHooks.length) {
+        stripped.push({ ...entry, hooks: strippedHooks });
+        if (keptHooks.length) kept.push({ ...entry, hooks: keptHooks });
+      } else {
+        kept.push(entry);
+      }
+    }
+    if (stripped.length) removed[event] = stripped;
+    if (kept.length) hooks[event] = kept;
+    else delete hooks[event];
+  }
+
+  settings.hooks = hooks;
+  writeClaudeSettings(settings);
+  fs.writeFileSync(DISABLED_HOOKS_PATH, JSON.stringify(removed, null, 2), 'utf-8');
+}
+
+function enableHooks() {
+  if (!fs.existsSync(DISABLED_HOOKS_PATH)) return;
+  const removed = JSON.parse(fs.readFileSync(DISABLED_HOOKS_PATH, 'utf-8'));
+  const settings = readClaudeSettings();
+  const hooks = settings.hooks || {};
+
+  for (const [event, entries] of Object.entries(removed)) {
+    if (!hooks[event]) hooks[event] = [];
+    hooks[event].push(...entries);
+  }
+
+  settings.hooks = hooks;
+  writeClaudeSettings(settings);
+  fs.unlinkSync(DISABLED_HOOKS_PATH);
+}
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const MIME = {
@@ -149,9 +226,9 @@ function buildDashboardData() {
     };
   }
 
-  // Live routing events from hooks
+  // Live routing events from hooks — no limit, read full history
   const routingStats = events.getRoutingStats();
-  const recentEvents = events.readEvents({ limit: 500 });
+  const recentEvents = events.readEvents({});
 
   // Merge hook routing_decision events into the taskLog so "All Time" timeline is complete
   const hookDecisions = recentEvents.filter(e => e.type === 'routing_decision');
@@ -266,16 +343,17 @@ function buildDashboardData() {
       mcpEnabled: mcpServers[name]?.enabled?.length || 0,
       mcpDisabled: mcpServers[name]?.disabled?.length || 0,
     })).sort((a, b) => b.messages - a.messages),
-    taskLog: taskLog.slice(-200).reverse(),
+    taskLog: taskLog.slice(-2000).reverse(),
+    hooksEnabled: getHooksStatus(),
     runs: runs.slice(0, 200),
     dailyLogs: {
       interactions: dailyLogs.interactions,
       errors: dailyLogs.errors,
     },
-    // Live routing data from hooks
+    // Live routing data from hooks — full history, newest first
     routingEvents: {
       stats: routingStats,
-      recent: recentEvents.slice(-100).reverse(),
+      recent: recentEvents.slice().reverse(),
     },
     // Per-session cost tracking (now using real token data from session files)
     sessionCosts: events.getSessionCosts(),
@@ -349,6 +427,26 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
+  }
+
+  if (req.url === '/api/hooks/status' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ enabled: getHooksStatus() }));
+    return;
+  }
+
+  if (req.url === '/api/hooks/toggle' && req.method === 'POST') {
+    try {
+      const enabled = getHooksStatus();
+      if (enabled) disableHooks();
+      else enableHooks();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ enabled: !enabled }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
   }
 
   if (req.url === '/api/dashboard') {

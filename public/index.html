@@ -112,6 +112,8 @@
     transition: color 200ms, border-color 200ms;
   }
   .theme-btn:hover { color: var(--fg); border-color: var(--dim); }
+  .hooks-on { color: var(--accent) !important; border-color: var(--accent-muted) !important; }
+  .hooks-off { color: var(--danger) !important; border-color: var(--danger) !important; opacity: 0.7; }
 
   /* ─── Metrics bar ────────────────────────── */
   .metrics {
@@ -363,6 +365,23 @@ function cleanProject(slug) {
 function getTheme() { return localStorage.getItem('token-coach-theme') || 'dark'; }
 function setTheme(t) { localStorage.setItem('token-coach-theme', t); document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : ''); }
 function toggleTheme() { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); render(); }
+
+async function toggleHooks() {
+  const btn = document.getElementById('v-hooks-btn');
+  if (btn) btn.textContent = '...';
+  try {
+    const res = await fetch('/api/hooks/toggle', { method: 'POST' });
+    const { enabled } = await res.json();
+    if (DATA) DATA.hooksEnabled = enabled;
+    if (btn) {
+      btn.textContent = 'Hooks ' + (enabled ? 'ON' : 'OFF');
+      btn.className = 'theme-btn hooks-btn ' + (enabled ? 'hooks-on' : 'hooks-off');
+      btn.setAttribute('aria-label', enabled ? 'Hooks enabled — click to disable' : 'Hooks disabled — click to enable');
+    }
+  } catch (e) {
+    if (btn) btn.textContent = 'Error';
+  }
+}
 setTheme(getTheme());
 
 function setText(id, val) { const el = document.getElementById(id); if (!el) return; const s = String(val); if (el.textContent !== s) el.textContent = s; }
@@ -442,6 +461,7 @@ function buildHTML() {
       <h1>Token Coach</h1>
       <nav class="hdr-right" aria-label="Dashboard controls">
         <span class="hdr-live" role="status" aria-label="Live data updates active">Live</span>
+        <button class="theme-btn hooks-btn ${D.hooksEnabled ? 'hooks-on' : 'hooks-off'}" onclick="toggleHooks()" aria-label="${D.hooksEnabled ? 'Hooks enabled — click to disable' : 'Hooks disabled — click to enable'}" id="v-hooks-btn">Hooks ${D.hooksEnabled ? 'ON' : 'OFF'}</button>
         <button class="theme-btn" onclick="toggleTheme()" aria-label="Switch to ${isDark ? 'light' : 'dark'} theme">${isDark ? 'Light' : 'Dark'}</button>
       </nav>
     </header>
@@ -690,8 +710,8 @@ function renderTimeline(tab) {
   // Approximate cost per prompt by model (USD) — rough estimates for display
   const promptCost = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
 
-  return (tab === 'today' ? entries : entries.slice(0, 60)).map(t => {
-    const time = t.timestamp.slice(11, 16);
+  return (tab === 'today' ? entries : entries.slice(0, 500)).map(t => {
+    const time = tab === 'today' ? t.timestamp.slice(11, 16) : t.timestamp.slice(5, 16).replace('T', ' ');
     // Handle legacy "opus>sonnet" format
     const isDel = t.model.includes('>');
     const finalModel = isDel ? t.model.split('>')[1] : t.model;
@@ -726,7 +746,7 @@ function renderTimeline(tab) {
     }
 
     return `<div class="tl-row">
-      <div class="tl-time">${time}${tab==='all'?`<small>${t.timestamp.slice(5,10)}</small>`:''}</div>
+      <div class="tl-time">${time}</div>
       <div class="tl-model">${modelLabel(finalModel)}${badge}</div>
       <div class="tl-body">
         <div class="tl-desc">${esc(t.description)}${savings}</div>
