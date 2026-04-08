@@ -155,6 +155,10 @@ function extendStatsWithHistory(stats, history, dailyLogs) {
 }
 
 function buildDashboardData() {
+  // Prune old events on every dashboard load (silent, fast)
+  const cfg = config.read();
+  events.pruneOldEvents(cfg.history_days || 14);
+
   const stats = parser.readStatsCache();
   const history = parser.readHistory();
   const sessions = parser.readSessions();

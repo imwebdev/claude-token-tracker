@@ -114,6 +114,8 @@
   .theme-btn:hover { color: var(--fg); border-color: var(--dim); }
   .hooks-on { color: var(--accent) !important; border-color: var(--accent-muted) !important; }
   .hooks-off { color: var(--danger) !important; border-color: var(--danger) !important; opacity: 0.7; }
+  .tl-row-clickable { cursor: pointer; }
+  .tl-row-clickable:hover { background: var(--accent-dim); }
 
   .analysis-card { margin-bottom: 12px; }
   .analysis-grade { font-family: var(--mono); font-size: 28px; font-weight: 700; line-height: 1; }
@@ -361,6 +363,7 @@ let DATA = null;
 let activeFilter = 'all';
 let timelineTab = 'auto';
 let activeProject = 'all';
+let selectedDay = null; // date string YYYY-MM-DD when drilling into a day
 
 /** Turn a path-based project slug into a clean display name */
 function cleanProject(slug) {
@@ -529,6 +532,20 @@ function buildHTML() {
         ${renderFloorSelector(D.config?.default_model || D.config?.model_floor || 'sonnet')}
       </div>
       <div id="v-floor-warning">${renderFloorWarning(D)}</div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--separator)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <div>
+            <div style="font-size:13px;font-weight:500">History retention</div>
+            <div style="font-size:11px;color:var(--dim);margin-top:2px">Days of routing events to keep. Older files are deleted on load.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <input id="v-history-days" type="number" min="1" max="365" value="${D.config?.history_days ?? 14}"
+              style="width:56px;background:var(--faint);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;color:var(--fg);font-family:var(--mono);text-align:center"
+              onchange="saveHistoryDays(this.value)" aria-label="History retention in days" />
+            <span style="font-size:12px;color:var(--dim)">days</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="g2 anim d2" style="height:560px">
@@ -639,12 +656,13 @@ function renderAnalysis(a) {
 }
 
 function renderDaily() {
+  if (selectedDay) return renderDayDetail(selectedDay);
   const days = DATA?.dailyBreakdown;
   if (!days || !days.length) return '<div class="empty">No daily data yet</div>';
   return days.map(d => {
-    const total = (d.models.opus||0) + (d.models.sonnet||0) + (d.models.haiku||0);
-    return `<div class="tl-row">
-      <div class="tl-time">${d.date.slice(5)}</div>
+    const isToday = d.date === new Date().toISOString().slice(0, 10);
+    return `<div class="tl-row tl-row-clickable" onclick="drillDay('${d.date}')" role="button" tabindex="0" aria-label="View ${d.date} routing decisions" onkeydown="if(event.key==='Enter'||event.key===' ')drillDay('${d.date}')">
+      <div class="tl-time">${d.date.slice(5)}${isToday ? '<small>today</small>' : ''}</div>
       <div class="tl-model" style="min-width:90px">
         <span style="font-family:var(--mono);font-size:12px">${d.decisions} tasks</span>
       </div>
@@ -657,8 +675,47 @@ function renderDaily() {
           ${d.delegationRate > 0 ? `<span style="color:var(--accent);font-size:11px">${d.delegationRate}% routed</span>` : ''}
         </div>
       </div>
+      <div style="color:var(--dim);font-size:16px;padding-left:4px">›</div>
     </div>`;
   }).join('');
+}
+
+function renderDayDetail(date) {
+  const entries = (DATA?.taskLog || []).filter(t => t.timestamp && t.timestamp.slice(0, 10) === date);
+  const promptCost = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
+  const back = `<div style="margin-bottom:10px"><button class="theme-btn" onclick="drillDay(null)" style="font-size:12px">← All days</button> <span style="font-size:13px;font-weight:600;margin-left:8px">${date}</span></div>`;
+  if (!entries.length) return back + '<div class="empty">No routing decisions found for this date</div>';
+  return back + entries.slice(0, 200).map(t => {
+    const time = t.timestamp.slice(11, 16);
+    const isDel = t.model.includes('>');
+    const finalModel = isDel ? t.model.split('>')[1] : t.model;
+    const baseModel = isDel ? t.model.split('>')[0] : (t.baseModel || null);
+    const tier = { haiku: 0, sonnet: 1, opus: 2 };
+    const finalTier = tier[finalModel] ?? 1;
+    const baseTier = baseModel ? (tier[baseModel] ?? 1) : finalTier;
+    let badge = '';
+    if (baseModel && baseTier > finalTier) {
+      const saved = (promptCost[baseModel] || 0) - (promptCost[finalModel] || 0);
+      badge = `<span class="tl-badge tl-badge-down">↓ routed from ${baseModel}</span>${saved > 0 ? `<span class="tl-saved">~$${saved.toFixed(2)} saved</span>` : ''}`;
+    } else if (baseModel && baseTier < finalTier) {
+      badge = `<span class="tl-badge tl-badge-up">↑ upgraded</span>`;
+    } else {
+      badge = `<span class="tl-badge tl-badge-stay">recommended</span>`;
+    }
+    return `<div class="tl-row">
+      <div class="tl-time">${time}</div>
+      <div class="tl-model">${modelLabel(finalModel)}${badge}</div>
+      <div class="tl-body">
+        <div class="tl-desc">${esc(t.description)}</div>
+        <div class="tl-meta"><span class="tl-proj">${esc(t.project)}</span><span class="tl-sz">${t.size}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function drillDay(date) {
+  selectedDay = date;
+  document.getElementById('v-timeline').innerHTML = renderTimeline(getEffectiveTab());
 }
 
 function renderSavings(savings) {
@@ -770,6 +827,14 @@ function setFloor(floor) {
   }).catch(() => {});
 }
 
+function saveHistoryDays(val) {
+  const days = parseInt(val, 10);
+  if (!days || days < 1 || days > 365) return;
+  fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ history_days: days }) })
+    .then(r => r.json()).then(cfg => { if (DATA) DATA.config = cfg; })
+    .catch(() => {});
+}
+
 function renderTimeline(tab) {
   if (!DATA) return '';
   if (tab === 'daily') return renderDaily();
@@ -829,6 +894,7 @@ function renderTimeline(tab) {
 
 function setTab(tab) {
   timelineTab = tab;
+  if (tab !== 'daily') selectedDay = null; // clear drill-down when leaving daily tab
   const t = getEffectiveTab();
   document.getElementById('v-timeline').innerHTML = renderTimeline(t);
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.textContent.toLowerCase().startsWith(t)));
