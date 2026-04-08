@@ -315,7 +315,7 @@ function buildDashboardData() {
       tasks: hookTasks,
     };
     routing.delegationRate = todayDecisions.length > 0
-      ? (todayDispatches.length / todayDecisions.length * 100) : 0;
+      ? Math.round(todayDispatches.length / todayDecisions.length * 100) : 0;
   }
 
   // Build per-day breakdown from recentEvents (already loaded, no limit)
@@ -337,6 +337,15 @@ function buildDashboardData() {
   for (const d of Object.values(dailyBreakdown)) {
     d.cost = (d.models.opus || 0) * MODEL_COST.opus + (d.models.sonnet || 0) * MODEL_COST.sonnet + (d.models.haiku || 0) * MODEL_COST.haiku;
     d.delegationRate = d.decisions > 0 ? Math.round(d.dispatches / d.decisions * 100) : 0;
+    // Per-day efficiency grade
+    const total = (d.models.opus || 0) + (d.models.sonnet || 0) + (d.models.haiku || 0);
+    const cheapPct = total > 0 ? Math.round(((d.models.sonnet || 0) + (d.models.haiku || 0)) / total * 100) : 0;
+    const opusPct = total > 0 ? Math.round((d.models.opus || 0) / total * 100) : 0;
+    d.grade = cheapPct >= 70 && d.delegationRate >= 30 ? 'A'
+      : cheapPct >= 50 ? 'B'
+      : cheapPct >= 30 ? 'C' : 'D';
+    d.cheapPct = cheapPct;
+    d.opusPct = opusPct;
   }
   const dailyBreakdownArr = Object.values(dailyBreakdown).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
 
@@ -350,7 +359,7 @@ function buildDashboardData() {
     const cheapPct = totalCalls > 0 ? Math.round((sonnetCalls + haikuCalls) / totalCalls * 100) : 0;
     const opusPct = totalCalls > 0 ? Math.round(opusCalls / totalCalls * 100) : 0;
     const haikuPct = totalCalls > 0 ? Math.round(haikuCalls / totalCalls * 100) : 0;
-    const delegationRate = routingData?.delegationRate || 0;
+    const delegationRate = Math.round(routingData?.delegationRate || 0);
     const todayCost = todayTokenUsage?.totalCost || 0;
     const sessions = todayTokenUsage?.bySession || {};
     const sessionList = Object.entries(sessions);

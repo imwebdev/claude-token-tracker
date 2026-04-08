@@ -649,7 +649,7 @@ function renderAnalysis(a) {
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
       <span class="analysis-grade grade-${a.grade}">${a.grade}</span>
       <span class="analysis-summary">${esc(a.gradeSummary)}</span>
-      <span style="margin-left:auto;font-size:11px;color:var(--dim);font-family:var(--mono)">${a.totalCalls} calls · ${a.cheapPct}% cheap · ${a.delegationRate}% delegated</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--dim);font-family:var(--mono)">${a.totalCalls} calls · ${a.cheapPct}% cheap · ${Math.round(a.delegationRate)}% delegated</span>
     </div>
     ${tips.length && a.grade !== 'A' ? `<div class="analysis-tips">${tips.map(t => `<div class="analysis-tip">${esc(t)}</div>`).join('')}</div>` : ''}
   `;
@@ -661,10 +661,11 @@ function renderDaily() {
   if (!days || !days.length) return '<div class="empty">No daily data yet</div>';
   return days.map(d => {
     const isToday = d.date === new Date().toISOString().slice(0, 10);
-    return `<div class="tl-row tl-row-clickable" onclick="drillDay('${d.date}')" role="button" tabindex="0" aria-label="View ${d.date} routing decisions" onkeydown="if(event.key==='Enter'||event.key===' ')drillDay('${d.date}')">
+    return `<div class="tl-row tl-row-clickable" onclick="drillDay('${d.date}')" role="button" tabindex="0" aria-label="View ${d.date} routing decisions, grade ${d.grade}" onkeydown="if(event.key==='Enter'||event.key===' ')drillDay('${d.date}')">
       <div class="tl-time">${d.date.slice(5)}${isToday ? '<small>today</small>' : ''}</div>
-      <div class="tl-model" style="min-width:90px">
-        <span style="font-family:var(--mono);font-size:12px">${d.decisions} tasks</span>
+      <div class="tl-model" style="min-width:70px;display:flex;align-items:center;gap:6px">
+        ${d.grade ? `<span class="analysis-grade grade-${d.grade}" style="font-size:14px">${d.grade}</span>` : ''}
+        <span style="font-family:var(--mono);font-size:12px">${d.decisions}</span>
       </div>
       <div class="tl-body">
         <div class="tl-desc" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -683,7 +684,9 @@ function renderDaily() {
 function renderDayDetail(date) {
   const entries = (DATA?.taskLog || []).filter(t => t.timestamp && t.timestamp.slice(0, 10) === date);
   const promptCost = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
-  const back = `<div style="margin-bottom:10px"><button class="theme-btn" onclick="drillDay(null)" style="font-size:12px">← All days</button> <span style="font-size:13px;font-weight:600;margin-left:8px">${date}</span></div>`;
+  const dayData = (DATA?.dailyBreakdown || []).find(d => d.date === date);
+  const gradeHtml = dayData?.grade ? `<span class="analysis-grade grade-${dayData.grade}" style="font-size:18px;vertical-align:middle;margin-left:10px">${dayData.grade}</span><span style="font-size:11px;color:var(--dim);margin-left:6px">${dayData.cheapPct}% cheap · ${dayData.delegationRate}% delegated · $${dayData.cost.toFixed(2)}</span>` : '';
+  const back = `<div style="margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:6px"><button class="theme-btn" onclick="drillDay(null)" style="font-size:12px">← All days</button> <span style="font-size:13px;font-weight:600">${date}</span>${gradeHtml}</div>`;
   if (!entries.length) return back + '<div class="empty">No routing decisions found for this date</div>';
   return back + entries.slice(0, 200).map(t => {
     const time = t.timestamp.slice(11, 16);
