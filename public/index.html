@@ -112,6 +112,21 @@
     transition: color 200ms, border-color 200ms;
   }
   .theme-btn:hover { color: var(--fg); border-color: var(--dim); }
+  .hooks-on { color: var(--accent) !important; border-color: var(--accent-muted) !important; }
+  .hooks-off { color: var(--danger) !important; border-color: var(--danger) !important; opacity: 0.7; }
+  .tl-row-clickable { cursor: pointer; }
+  .tl-row-clickable:hover { background: var(--accent-dim); }
+
+  .analysis-card { margin-bottom: 12px; }
+  .analysis-grade { font-family: var(--mono); font-size: 28px; font-weight: 700; line-height: 1; }
+  .grade-A { color: #2d7a2d; } [data-theme="dark"] .grade-A { color: #5cb85c; }
+  .grade-B { color: var(--accent); }
+  .grade-C { color: #c07000; } [data-theme="dark"] .grade-C { color: #e09030; }
+  .grade-D { color: var(--danger); }
+  .analysis-summary { font-size: 13px; color: var(--muted); margin-left: 10px; }
+  .analysis-tips { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--separator); }
+  .analysis-tip { font-size: 12px; color: var(--dim); padding: 4px 0; display: flex; gap: 6px; }
+  .analysis-tip::before { content: '→'; color: var(--accent-muted); flex-shrink: 0; }
 
   /* ─── Metrics bar ────────────────────────── */
   .metrics {
@@ -348,6 +363,7 @@ let DATA = null;
 let activeFilter = 'all';
 let timelineTab = 'auto';
 let activeProject = 'all';
+let selectedDay = null; // date string YYYY-MM-DD when drilling into a day
 
 /** Turn a path-based project slug into a clean display name */
 function cleanProject(slug) {
@@ -363,6 +379,34 @@ function cleanProject(slug) {
 function getTheme() { return localStorage.getItem('token-coach-theme') || 'dark'; }
 function setTheme(t) { localStorage.setItem('token-coach-theme', t); document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : ''); }
 function toggleTheme() { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); render(); }
+
+function toggleAnalysis() {
+  const body = document.getElementById('v-analysis-body');
+  const card = document.getElementById('v-analysis-card');
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  localStorage.setItem('analysis-open', !isOpen);
+  const hd = card?.querySelector('.card-hd');
+  if (hd) hd.setAttribute('aria-expanded', !isOpen);
+}
+
+async function toggleHooks() {
+  const btn = document.getElementById('v-hooks-btn');
+  if (btn) btn.textContent = '...';
+  try {
+    const res = await fetch('/api/hooks/toggle', { method: 'POST' });
+    const { enabled } = await res.json();
+    if (DATA) DATA.hooksEnabled = enabled;
+    if (btn) {
+      btn.textContent = 'Hooks ' + (enabled ? 'ON' : 'OFF');
+      btn.className = 'theme-btn hooks-btn ' + (enabled ? 'hooks-on' : 'hooks-off');
+      btn.setAttribute('aria-label', enabled ? 'Hooks enabled — click to disable' : 'Hooks disabled — click to enable');
+    }
+  } catch (e) {
+    if (btn) btn.textContent = 'Error';
+  }
+}
 setTheme(getTheme());
 
 function setText(id, val) { const el = document.getElementById(id); if (!el) return; const s = String(val); if (el.textContent !== s) el.textContent = s; }
@@ -398,6 +442,8 @@ function softRefresh() {
   setText('v-hogs-ct', ((D.tokenHogs?.totalToolCalls||0) + (D.tokenHogs?.totalDispatches||0)) + ' calls');
   setSection('v-hogs-body', renderTokenHogs(D.tokenHogs));
   setSection('v-hours', renderHourGrid(s.hourCounts));
+  if (D.analysis?.grade) setText('v-analysis-grade', `Grade ${D.analysis.grade}`);
+  setSection('v-analysis-body', renderAnalysis(D.analysis));
 }
 
 async function load() {
@@ -419,6 +465,7 @@ function modelLabel(m) {
 }
 
 function getEffectiveTab() {
+  if (timelineTab === 'daily') return 'daily';
   if (timelineTab !== 'auto') return timelineTab;
   return DATA?.routing?.todayStats?.totalTasks > 0 ? 'today' : 'all';
 }
@@ -442,6 +489,7 @@ function buildHTML() {
       <h1>Token Coach</h1>
       <nav class="hdr-right" aria-label="Dashboard controls">
         <span class="hdr-live" role="status" aria-label="Live data updates active">Live</span>
+        <button class="theme-btn hooks-btn ${D.hooksEnabled ? 'hooks-on' : 'hooks-off'}" onclick="toggleHooks()" aria-label="${D.hooksEnabled ? 'Hooks enabled — click to disable' : 'Hooks disabled — click to enable'}" id="v-hooks-btn">Hooks ${D.hooksEnabled ? 'ON' : 'OFF'}</button>
         <button class="theme-btn" onclick="toggleTheme()" aria-label="Switch to ${isDark ? 'light' : 'dark'} theme">${isDark ? 'Light' : 'Dark'}</button>
       </nav>
     </header>
@@ -457,6 +505,14 @@ function buildHTML() {
     </div>
 
     </section>
+
+    <div class="card analysis-card anim d1" id="v-analysis-card">
+      <div class="card-hd" onclick="toggleAnalysis()" style="cursor:pointer;user-select:none" role="button" aria-expanded="${localStorage.getItem('analysis-open') !== 'false'}" aria-controls="v-analysis-body">
+        <h2>Efficiency analysis</h2>
+        <span class="ct" id="v-analysis-grade">${D.analysis?.grade ? `Grade ${D.analysis.grade}` : 'No data'}</span>
+      </div>
+      <div id="v-analysis-body" style="display:${localStorage.getItem('analysis-open') === 'false' ? 'none' : 'block'}">${renderAnalysis(D.analysis)}</div>
+    </div>
 
     <div class="card anim d1" style="margin-bottom:12px">
       <div class="card-hd">
@@ -476,6 +532,20 @@ function buildHTML() {
         ${renderFloorSelector(D.config?.default_model || D.config?.model_floor || 'sonnet')}
       </div>
       <div id="v-floor-warning">${renderFloorWarning(D)}</div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--separator)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <div>
+            <div style="font-size:13px;font-weight:500">History retention</div>
+            <div style="font-size:11px;color:var(--dim);margin-top:2px">Days of routing events to keep. Older files are deleted on load.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <input id="v-history-days" type="number" min="1" max="365" value="${D.config?.history_days ?? 14}"
+              style="width:56px;background:var(--faint);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:13px;color:var(--fg);font-family:var(--mono);text-align:center"
+              onchange="saveHistoryDays(this.value)" aria-label="History retention in days" />
+            <span style="font-size:12px;color:var(--dim)">days</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="g2 anim d2" style="height:560px">
@@ -489,6 +559,7 @@ function buildHTML() {
         <div class="tabs" role="tablist" aria-label="Timeline time range">
           <button class="tab ${tab==='today'?'on':''}" onclick="setTab('today')" id="v-tab-today" role="tab" aria-selected="${tab==='today'}" aria-controls="v-timeline">Today (${today.totalTasks})</button>
           <button class="tab ${tab==='all'?'on':''}" onclick="setTab('all')" role="tab" aria-selected="${tab==='all'}" aria-controls="v-timeline">All time</button>
+          <button class="tab ${tab==='daily'?'on':''}" onclick="setTab('daily')" role="tab" aria-selected="${tab==='daily'}" aria-controls="v-timeline">Daily</button>
         </div>
         <div class="filters" role="toolbar" aria-label="Filter by model">
           <button class="flt ${activeFilter==='all'?'on':''}" onclick="setFilter('all')" aria-pressed="${activeFilter==='all'}">all</button>
@@ -570,6 +641,85 @@ function render() {
 }
 
 /* ─── Renderers ─────────────────────────────── */
+
+function renderAnalysis(a) {
+  if (!a || !a.grade) return '<div style="font-size:12px;color:var(--dim)">No activity yet today — analysis will appear once routing decisions are made.</div>';
+  const tips = a.tips || [];
+  return `
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+      <span class="analysis-grade grade-${a.grade}">${a.grade}</span>
+      <span class="analysis-summary">${esc(a.gradeSummary)}</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--dim);font-family:var(--mono)">${a.totalCalls} calls · ${a.cheapPct}% cheap · ${Math.round(a.delegationRate)}% delegated</span>
+    </div>
+    ${tips.length && a.grade !== 'A' ? `<div class="analysis-tips">${tips.map(t => `<div class="analysis-tip">${esc(t)}</div>`).join('')}</div>` : ''}
+  `;
+}
+
+function renderDaily() {
+  if (selectedDay) return renderDayDetail(selectedDay);
+  const days = DATA?.dailyBreakdown;
+  if (!days || !days.length) return '<div class="empty">No daily data yet</div>';
+  return days.map(d => {
+    const isToday = d.date === new Date().toISOString().slice(0, 10);
+    return `<div class="tl-row tl-row-clickable" onclick="drillDay('${d.date}')" role="button" tabindex="0" aria-label="View ${d.date} routing decisions, grade ${d.grade}" onkeydown="if(event.key==='Enter'||event.key===' ')drillDay('${d.date}')">
+      <div class="tl-time">${d.date.slice(5)}${isToday ? '<small>today</small>' : ''}</div>
+      <div class="tl-model" style="min-width:70px;display:flex;align-items:center;gap:6px">
+        ${d.grade ? `<span class="analysis-grade grade-${d.grade}" style="font-size:14px">${d.grade}</span>` : ''}
+        <span style="font-family:var(--mono);font-size:12px">${d.decisions}</span>
+      </div>
+      <div class="tl-body">
+        <div class="tl-desc" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          ${d.models.opus ? `<span class="ml ml-opus">opus×${d.models.opus}</span>` : ''}
+          ${d.models.sonnet ? `<span class="ml ml-sonnet">sonnet×${d.models.sonnet}</span>` : ''}
+          ${d.models.haiku ? `<span class="ml ml-haiku">haiku×${d.models.haiku}</span>` : ''}
+          <span style="color:var(--dim);font-size:11px">$${d.cost.toFixed(2)}</span>
+          ${d.delegationRate > 0 ? `<span style="color:var(--accent);font-size:11px">${d.delegationRate}% routed</span>` : ''}
+        </div>
+      </div>
+      <div style="color:var(--dim);font-size:16px;padding-left:4px">›</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDayDetail(date) {
+  const entries = (DATA?.taskLog || []).filter(t => t.timestamp && t.timestamp.slice(0, 10) === date);
+  const promptCost = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
+  const dayData = (DATA?.dailyBreakdown || []).find(d => d.date === date);
+  const gradeHtml = dayData?.grade ? `<span class="analysis-grade grade-${dayData.grade}" style="font-size:18px;vertical-align:middle;margin-left:10px">${dayData.grade}</span><span style="font-size:11px;color:var(--dim);margin-left:6px">${dayData.cheapPct}% cheap · ${dayData.delegationRate}% delegated · $${dayData.cost.toFixed(2)}</span>` : '';
+  const back = `<div style="margin-bottom:10px;display:flex;align-items:center;flex-wrap:wrap;gap:6px"><button class="theme-btn" onclick="drillDay(null)" style="font-size:12px">← All days</button> <span style="font-size:13px;font-weight:600">${date}</span>${gradeHtml}</div>`;
+  if (!entries.length) return back + '<div class="empty">No routing decisions found for this date</div>';
+  return back + entries.slice(0, 200).map(t => {
+    const time = t.timestamp.slice(11, 16);
+    const isDel = t.model.includes('>');
+    const finalModel = isDel ? t.model.split('>')[1] : t.model;
+    const baseModel = isDel ? t.model.split('>')[0] : (t.baseModel || null);
+    const tier = { haiku: 0, sonnet: 1, opus: 2 };
+    const finalTier = tier[finalModel] ?? 1;
+    const baseTier = baseModel ? (tier[baseModel] ?? 1) : finalTier;
+    let badge = '';
+    if (baseModel && baseTier > finalTier) {
+      const saved = (promptCost[baseModel] || 0) - (promptCost[finalModel] || 0);
+      badge = `<span class="tl-badge tl-badge-down">↓ routed from ${baseModel}</span>${saved > 0 ? `<span class="tl-saved">~$${saved.toFixed(2)} saved</span>` : ''}`;
+    } else if (baseModel && baseTier < finalTier) {
+      badge = `<span class="tl-badge tl-badge-up">↑ upgraded</span>`;
+    } else {
+      badge = `<span class="tl-badge tl-badge-stay">recommended</span>`;
+    }
+    return `<div class="tl-row">
+      <div class="tl-time">${time}</div>
+      <div class="tl-model">${modelLabel(finalModel)}${badge}</div>
+      <div class="tl-body">
+        <div class="tl-desc">${esc(t.description)}</div>
+        <div class="tl-meta"><span class="tl-proj">${esc(t.project)}</span><span class="tl-sz">${t.size}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function drillDay(date) {
+  selectedDay = date;
+  document.getElementById('v-timeline').innerHTML = renderTimeline(getEffectiveTab());
+}
 
 function renderSavings(savings) {
   if (!savings) return '<div class="empty">No savings data yet.</div>';
@@ -680,8 +830,17 @@ function setFloor(floor) {
   }).catch(() => {});
 }
 
+function saveHistoryDays(val) {
+  const days = parseInt(val, 10);
+  if (!days || days < 1 || days > 365) return;
+  fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ history_days: days }) })
+    .then(r => r.json()).then(cfg => { if (DATA) DATA.config = cfg; })
+    .catch(() => {});
+}
+
 function renderTimeline(tab) {
   if (!DATA) return '';
+  if (tab === 'daily') return renderDaily();
   const r = DATA.routing;
   let entries = tab === 'today' ? (r.todayStats.tasks || []) : DATA.taskLog;
   if (activeFilter !== 'all') entries = entries.filter(t => t.model.includes(activeFilter));
@@ -690,8 +849,8 @@ function renderTimeline(tab) {
   // Approximate cost per prompt by model (USD) — rough estimates for display
   const promptCost = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
 
-  return (tab === 'today' ? entries : entries.slice(0, 60)).map(t => {
-    const time = t.timestamp.slice(11, 16);
+  return (tab === 'today' ? entries : entries.slice(0, 500)).map(t => {
+    const time = tab === 'today' ? t.timestamp.slice(11, 16) : t.timestamp.slice(5, 16).replace('T', ' ');
     // Handle legacy "opus>sonnet" format
     const isDel = t.model.includes('>');
     const finalModel = isDel ? t.model.split('>')[1] : t.model;
@@ -726,7 +885,7 @@ function renderTimeline(tab) {
     }
 
     return `<div class="tl-row">
-      <div class="tl-time">${time}${tab==='all'?`<small>${t.timestamp.slice(5,10)}</small>`:''}</div>
+      <div class="tl-time">${time}</div>
       <div class="tl-model">${modelLabel(finalModel)}${badge}</div>
       <div class="tl-body">
         <div class="tl-desc">${esc(t.description)}${savings}</div>
@@ -738,6 +897,7 @@ function renderTimeline(tab) {
 
 function setTab(tab) {
   timelineTab = tab;
+  if (tab !== 'daily') selectedDay = null; // clear drill-down when leaving daily tab
   const t = getEffectiveTab();
   document.getElementById('v-timeline').innerHTML = renderTimeline(t);
   document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.textContent.toLowerCase().startsWith(t)));

@@ -289,9 +289,32 @@ function getLastRoutingDecision(sessionId) {
   return decisions.length > 0 ? decisions[decisions.length - 1] : null;
 }
 
+/**
+ * Delete event JSONL files older than `days` days.
+ * Called on dashboard load to enforce history retention.
+ */
+function pruneOldEvents(days) {
+  ensureDirs();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const files = fs.readdirSync(EVENTS_DIR).filter(f => f.endsWith('.jsonl'));
+  let pruned = 0;
+  for (const f of files) {
+    const date = f.replace('.jsonl', '');
+    if (date < cutoffStr) {
+      fs.unlinkSync(path.join(EVENTS_DIR, f));
+      pruned++;
+    }
+  }
+  return pruned;
+}
+
 module.exports = {
   logEvent,
   readEvents,
+  pruneOldEvents,
   getRoutingStats,
   getSessionCosts,
   getSessionCost,

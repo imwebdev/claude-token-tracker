@@ -21,6 +21,9 @@ const DEFAULTS = {
 
   // Dashboard port. null = use default 6099.
   dashboard_port: null,
+
+  // How many days of event history to keep. Older JSONL files are pruned on dashboard load.
+  history_days: 14,
 };
 
 let _cache = null;
