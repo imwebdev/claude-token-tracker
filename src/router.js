@@ -481,6 +481,27 @@ function recommendModel(classification, opts = {}) {
   if (!MODEL_ORDER.includes(floor)) floor = 'sonnet';
   if (preference == null) preference = 35;
 
+  // Check for user-level force_model override — bypasses all routing logic
+  let forceModel = opts.force_model;
+  if (!forceModel) {
+    try {
+      const config = require('./config');
+      forceModel = config.read().force_model;
+    } catch {}
+  }
+  if (forceModel && MODEL_ORDER.includes(forceModel)) {
+    return {
+      model: forceModel,
+      baseModel: forceModel,
+      default_model: floor,
+      fallbackChain: forceModel === 'haiku' ? ['haiku', 'sonnet', 'opus']
+        : forceModel === 'sonnet' ? ['sonnet', 'opus']
+        : ['opus'],
+      reasons: [`[override] force_model=${forceModel} -- routing bypassed`],
+      costMultiplier: forceModel === 'haiku' ? 1 : forceModel === 'sonnet' ? 3 : 15,
+    };
+  }
+
   // If a custom rule supplied an explicit model override, honour it directly
   if (customModel && MODEL_ORDER.includes(customModel)) {
     return {

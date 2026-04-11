@@ -22,6 +22,10 @@ const DEFAULTS = {
   // Dashboard port. null = use default 6099.
   dashboard_port: null,
 
+  // Force model override: when set, bypasses all routing logic and uses this model for every task.
+  // null = normal routing; 'haiku' | 'sonnet' | 'opus' = locked override.
+  force_model: null,
+
   // How many days of event history to keep. Older JSONL files are pruned on dashboard load.
   history_days: 14,
 

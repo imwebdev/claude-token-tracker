@@ -532,6 +532,16 @@ function buildHTML() {
         ${renderFloorSelector(D.config?.default_model || D.config?.model_floor || 'sonnet')}
       </div>
       <div id="v-floor-warning">${renderFloorWarning(D)}</div>
+      <div id="v-floor-error" style="display:none;font-size:12px;color:#c0392b;margin-top:8px;padding:6px 8px;background:rgba(192,57,43,0.08);border-radius:4px"></div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px">Force override</div>
+        <div style="font-size:11px;color:var(--dim);margin-bottom:8px;line-height:1.4">Lock a specific model regardless of TC's routing logic. Use when you want full control — e.g., force Opus while debugging.</div>
+        <div class="floor-row" id="v-override-row">
+          ${renderOverrideSelector(D.config?.force_model || null)}
+        </div>
+        <div id="v-override-warn" style="display:${D.config?.force_model ? '' : 'none'};margin-top:8px;font-size:11px;color:#e67e22;padding:5px 8px;background:rgba(230,126,34,0.1);border-radius:4px">⚠ Override active — TC routing is bypassed. All tasks will use <strong id="v-override-model">${D.config?.force_model || ''}</strong>.</div>
+        <div id="v-override-error" style="display:none;font-size:12px;color:#c0392b;margin-top:8px;padding:6px 8px;background:rgba(192,57,43,0.08);border-radius:4px"></div>
+      </div>
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--separator)">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
           <div>
@@ -834,18 +844,59 @@ function renderFloorSelector(current) {
 }
 
 function setFloor(floor) {
+  const errEl = document.getElementById('v-floor-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
   fetch('/api/config', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ default_model: floor }),
-  }).then(r => r.json()).then(cfg => {
+  }).then(r => {
+    if (!r.ok) throw new Error('Server error ' + r.status);
+    return r.json();
+  }).then(cfg => {
     if (DATA) DATA.config = cfg;
-    // Update UI without full re-render
     const row = document.getElementById('v-floor-row');
     if (row) row.innerHTML = renderFloorSelector(floor);
     const label = document.getElementById('v-floor-label');
     if (label) label.textContent = floor;
-  }).catch(() => {});
+  }).catch(err => {
+    if (errEl) { errEl.textContent = 'Failed to save: ' + err.message; errEl.style.display = ''; }
+  });
+}
+
+function renderOverrideSelector(current) {
+  const opts = [
+    { id: null, label: 'Off', desc: 'TC routes normally' },
+    { id: 'haiku', label: 'Force Haiku', desc: 'Lock to haiku for every task' },
+    { id: 'sonnet', label: 'Force Sonnet', desc: 'Lock to sonnet for every task' },
+    { id: 'opus', label: 'Force Opus', desc: 'Lock to opus — routing bypassed' },
+  ];
+  return opts.map(o =>
+    `<button class="floor-btn ${o.id === current ? 'on' : ''}" onclick="setOverride(${o.id === null ? 'null' : "'" + o.id + "'"})" aria-pressed="${o.id === current}"><strong>${o.label}</strong><span>${o.desc}</span></button>`
+  ).join('');
+}
+
+function setOverride(model) {
+  const errEl = document.getElementById('v-override-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force_model: model }),
+  }).then(r => {
+    if (!r.ok) throw new Error('Server error ' + r.status);
+    return r.json();
+  }).then(cfg => {
+    if (DATA) DATA.config = cfg;
+    const row = document.getElementById('v-override-row');
+    if (row) row.innerHTML = renderOverrideSelector(model);
+    const warn = document.getElementById('v-override-warn');
+    if (warn) { warn.style.display = model ? '' : 'none'; }
+    const modelSpan = document.getElementById('v-override-model');
+    if (modelSpan) modelSpan.textContent = model || '';
+  }).catch(err => {
+    if (errEl) { errEl.textContent = 'Failed to save: ' + err.message; errEl.style.display = ''; }
+  });
 }
 
 function saveHistoryDays(val) {

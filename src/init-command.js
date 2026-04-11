@@ -122,13 +122,65 @@ function getPort() {
   return cfg.dashboard_port || 6099;
 }
 
+/**
+ * Try to register the dashboard as a systemd user service.
+ * No sudo required — user services auto-start on login.
+ * Returns true if successful.
+ */
+function setupSystemdService(repoDir, port) {
+  // Only attempt on Linux with systemd user session available
+  try {
+    execSync('systemctl --user status 2>/dev/null', { encoding: 'utf-8', stdio: 'pipe' });
+  } catch (e) {
+    // Exit code non-zero but stderr might contain actual failure vs "no units running"
+    if (e.status === 1) {
+      // Status 1 means systemd is available but no units are active — that's fine
+    } else {
+      return false; // systemd not available
+    }
+  }
+
+  try {
+    const serviceDir = path.join(os.homedir(), '.config', 'systemd', 'user');
+    fs.mkdirSync(serviceDir, { recursive: true });
+    const servicePath = path.join(serviceDir, 'claude-token-tracker.service');
+    const serverScript = path.join(repoDir, 'src', 'server.js');
+    const serviceContent = [
+      '[Unit]',
+      'Description=Claude Token Tracker Dashboard',
+      'After=network.target',
+      '',
+      '[Service]',
+      `ExecStart=${process.execPath} ${serverScript}`,
+      `Environment=PORT=${port}`,
+      'Environment=HOST=0.0.0.0',
+      'Restart=on-failure',
+      'RestartSec=3',
+      '',
+      '[Install]',
+      'WantedBy=default.target',
+      '',
+    ].join('\n');
+    fs.writeFileSync(servicePath, serviceContent);
+    execSync('systemctl --user daemon-reload', { encoding: 'utf-8', stdio: 'pipe' });
+    execSync('systemctl --user enable --now claude-token-tracker', { encoding: 'utf-8', stdio: 'pipe' });
+    ok(`Dashboard registered as systemd user service (auto-starts on login, no sudo needed)`);
+    ok(`Service file: ${servicePath}`);
+    return true;
+  } catch (e) {
+    warn('Could not set up systemd user service: ' + e.message);
+    return false;
+  }
+}
+
 function setupPm2(repoDir) {
   const port = getPort();
   try {
     execSync('which pm2', { encoding: 'utf-8', stdio: 'pipe' });
   } catch {
-    warn('PM2 not installed -- skipping dashboard auto-start');
-    info('Install PM2 globally: npm install -g pm2');
+    warn('PM2 not installed -- trying systemd user service instead');
+    if (setupSystemdService(repoDir, port)) return true;
+    info('To install PM2: npm install -g pm2');
     info(`Then run: PORT=${port} HOST=0.0.0.0 pm2 start src/server.js --name claude-token-tracker`);
     return false;
   }
@@ -176,12 +228,18 @@ function setupPm2(repoDir) {
       execSync(sudoLine.trim(), { encoding: 'utf-8', stdio: 'pipe' });
       ok('PM2 registered with system startup (auto-starts on reboot)');
     } catch {
-      // sudo requires a password — show the command for the user to run once
-      warn('Run this once to make the dashboard survive reboots:');
-      info(sudoLine.trim());
+      // sudo needs a password — fall back to systemd user service (no sudo required)
+      warn('PM2 system startup requires sudo (skipped). Trying systemd user service...');
+      if (!setupSystemdService(repoDir, port)) {
+        warn('Run this once to make PM2 start on reboot (requires sudo):');
+        info(sudoLine.trim());
+      }
     }
   } else {
-    ok('PM2 startup already registered with init system');
+    // pm2 startup didn't emit a sudo command — try systemd user service as reliable fallback
+    if (!setupSystemdService(repoDir, port)) {
+      ok('PM2 startup already configured or not needed');
+    }
   }
 
   return true;
@@ -236,18 +294,37 @@ function runDiagnostics() {
   // 5. Dashboard reachable
   total++;
   const port = getPort();
+  let dashboardRunning = false;
+  // Check via HTTP first (works regardless of PM2 or systemd)
   try {
-    const list = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf-8' });
-    const procs = JSON.parse(list);
-    const proc = procs.find(p => p.name === 'claude-token-tracker');
-    if (proc && proc.pm2_env?.status === 'online') {
-      ok(`Dashboard running via PM2 (port ${port})`);
-      pass++;
-    } else {
-      warn('Dashboard not running -- start with: claude-tokens dashboard');
-    }
+    execSync(`curl -sf --max-time 3 http://localhost:${port}/api/dashboard > /dev/null 2>&1`, {
+      encoding: 'utf-8', stdio: 'pipe',
+    });
+    ok(`Dashboard reachable at http://localhost:${port}`);
+    dashboardRunning = true;
+    pass++;
   } catch {
-    warn('Dashboard not running -- start with: claude-tokens dashboard');
+    // HTTP check failed — check PM2 for more specific error
+    let pm2Status = null;
+    try {
+      const list = execSync('pm2 jlist 2>/dev/null', { encoding: 'utf-8' });
+      const procs = JSON.parse(list);
+      const proc = procs.find(p => p.name === 'claude-token-tracker');
+      pm2Status = proc?.pm2_env?.status;
+    } catch {}
+    // Check systemd user service
+    let systemdStatus = null;
+    try {
+      systemdStatus = execSync('systemctl --user is-active claude-token-tracker 2>/dev/null', {
+        encoding: 'utf-8', stdio: 'pipe',
+      }).trim();
+    } catch {}
+    if (pm2Status === 'online' || systemdStatus === 'active') {
+      warn(`Dashboard process running but not responding on port ${port} -- check logs`);
+    } else {
+      warn(`Dashboard not running on port ${port} -- run: node bin/cli.js init`);
+      info('Or start manually: node src/server.js');
+    }
   }
 
   // 6. Router test
