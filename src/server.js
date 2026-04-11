@@ -448,6 +448,8 @@ function buildDashboardData() {
     },
     // User config (for dashboard UI controls)
     config: config.read(),
+    // Feedback loop stats
+    feedbackStats: events.getFeedbackStats(),
     // Per-day routing breakdown (last 30 days)
     dailyBreakdown: dailyBreakdownArr,
     // Efficiency analysis / grading
@@ -566,7 +568,7 @@ const server = http.createServer((req, res) => {
 });
 
 if (require.main === module) {
-  const HOST = process.env.HOST || '127.0.0.1';
+  const HOST = process.env.HOST || '0.0.0.0';
   server.listen(PORT, HOST, () => {
     console.log(`Claude Token Coach: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   });

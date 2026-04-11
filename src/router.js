@@ -25,6 +25,13 @@ const PATTERNS = {
     'explore', 'browse', 'reference', 'references',
     'look at',                 // "look at the error log"
     'where is the', 'where are the', // boost search score vs question "is the" overlap
+    // Past-tense retrospective forms
+    'investigated', 'browsed', 'explored', 'inspected', 'scanned', 'searched',
+    'browsed and documented', // "browsed and documented site pages"
+    'copied from',             // "copied landing page from X" — read + transcribe
+    'ingested',                // "ingested article from X" — read + store
+    'documented',              // "documented site pages, features"
+    'responded to',            // "responded to X" — answered/reacted (chat-like, low complexity)
   ],
   question: [
     // Classic interrogatives
@@ -56,6 +63,7 @@ const PATTERNS = {
     'not sure',                          // "not sure I understand" = explanation request
     'anyone know', 'does anyone',        // "anyone know if X" = community question
     'was that', 'was it',               // "was that always the case" = history question
+    'answered',                          // retrospective: "answered user question about X"
   ],
   review: [
     'review', 'audit', 'compare', 'benchmark', 'analyze', 'assess',
@@ -69,6 +77,7 @@ const PATTERNS = {
     'right track', 'on track',    // "am I on the right track" = validation request
     'make sense',                  // "does the flow still make sense" = review
     'am i',                        // "am I doing this right" = validation request
+    'reviewed',                    // retrospective: "reviewed voice_log observations"
   ],
   plan: [
     'plan', 'design', 'spec', 'roadmap', 'outline', 'strategy', 'approach',
@@ -78,7 +87,14 @@ const PATTERNS = {
     'brainstorm', 'rethink', 'we should',
   ],
   architecture: ['architecture', 'system design', 'infrastructure', 'database schema', 'data model', 'migration strategy', 'scalability'],
-  edit: ['fix', 'edit', 'update', 'change', 'modify', 'implement', 'refactor', 'write', 'rewrite', 'create', 'add', 'remove', 'delete', 'rename', 'move', 'replace', 'make', 'overhaul'],
+  edit: [
+    'fix', 'edit', 'update', 'change', 'modify', 'implement', 'refactor', 'write', 'rewrite', 'create', 'add', 'remove', 'delete', 'rename', 'move', 'replace', 'make', 'overhaul',
+    // Past-tense forms for retrospective task-log descriptions
+    'built', 'wrote', 'implemented', 'added', 'created', 'removed', 'deleted', 'moved', 'replaced',
+    'rewrote', 'refactored', 'updated', 'modified', 'changed', 'fixed', 'made', 'overhauled',
+    'wired', 'wired up', 'hooked up', 'integrated', 'migrated', 'scaffolded', 'shipped', 'deployed',
+    'showed',  // "showed user task usage dashboard" = built/displayed something
+  ],
   debug: [
     // Classic keywords (removed 'issue' — too ambiguous with GitHub issues)
     'bug', 'broken', 'debug', 'failure', 'regression', 'not working', 'fails', 'wrong', 'problem', 'unexpected',
@@ -121,8 +137,16 @@ const PATTERNS = {
     'every single', 'every time',   // "fires every single prompt" = repeating bug
     'issue is',                      // "the issue is that X" = problem description
   ],
-  command: ['run', 'execute', 'deploy', 'build', 'test', 'install', 'start', 'stop', 'restart', 'migrate', 'merge', 'push', 'pull'],
-  complex: ['multi-file', 'across', 'full app', 'entire', 'all files', 'whole codebase', 'whole', 'comprehensive', 'complete', 'overhaul', 'rewrite', 'from scratch', 'system-wide', 'system wide'],
+  command: [
+    'run', 'execute', 'deploy', 'build', 'test', 'install', 'start', 'stop', 'restart', 'migrate', 'merge', 'push', 'pull',
+    // Past-tense forms for retrospective log descriptions
+    'committed', 'deployed', 'redeployed', 'rebuilt', 'pushed', 'pulled', 'merged',
+    'migrated', 'installed', 'uninstalled', 'restarted', 'stopped', 'ran',
+  ],
+  // NOTE: 'entire' removed — too broad, caused review tasks like "audit entire codebase"
+  // to be bumped to opus when sonnet handles most audits fine. Kept multi-file/whole codebase
+  // as true complexity signals (they imply cross-file coordination, not just scope).
+  complex: ['multi-file', 'across', 'full app', 'all files', 'whole codebase', 'whole', 'comprehensive', 'complete', 'overhaul', 'rewrite', 'from scratch', 'system-wide', 'system wide'],
   simple: ['typo', 'rename', 'one line', 'small', 'quick', 'simple', 'just', 'only'],
 };
 

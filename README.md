@@ -292,7 +292,7 @@ node bin/cli.js learn
 
 ### Web dashboard
 
-A local dashboard (default `http://localhost:6099`) shows:
+A dashboard (default port 6099) shows:
 
 - Today's task count by model, delegation rate, and estimated cost
 - Every classified prompt with model, family, project, and status
@@ -302,15 +302,25 @@ A local dashboard (default `http://localhost:6099`) shows:
 - Tool and agent token consumption
 - Hourly activity heatmap
 
+`node bin/cli.js init` starts the dashboard automatically via PM2, binds it to all interfaces (`0.0.0.0`), and registers it with systemd so it survives reboots. Access it at:
+
+```
+http://<your-server-ip>:6099
+```
+
+If you're running Claude Code locally (not on a remote server), use `http://localhost:6099`.
+
+To make it survive reboots on a fresh machine, `init` will print one `sudo` command to run — copy-paste it once and it's done:
+
+```bash
+node bin/cli.js init    # prints the sudo startup command if needed
+```
+
+Manual dashboard commands (only needed if not using PM2):
+
 ```bash
 node bin/cli.js dashboard                # start on default port
 node bin/cli.js dashboard --port 8080    # override port
-```
-
-Or run persistently with PM2:
-
-```bash
-pm2 start src/server.js --name claude-token-tracker
 ```
 
 ---

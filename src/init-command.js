@@ -129,7 +129,7 @@ function setupPm2(repoDir) {
   } catch {
     warn('PM2 not installed -- skipping dashboard auto-start');
     info('Install PM2 globally: npm install -g pm2');
-    info(`Then run: PORT=${port} pm2 start src/server.js --name claude-token-tracker`);
+    info(`Then run: PORT=${port} HOST=0.0.0.0 pm2 start src/server.js --name claude-token-tracker`);
     return false;
   }
 
@@ -138,23 +138,53 @@ function setupPm2(repoDir) {
     const procs = JSON.parse(list);
     const existing = procs.find(p => p.name === 'claude-token-tracker');
     if (existing) {
-      // Delete and re-create so env vars are updated
+      // Delete and re-create so env vars (HOST, PORT) are updated
       execSync('pm2 delete claude-token-tracker', { encoding: 'utf-8', stdio: 'pipe' });
     }
   } catch {}
 
   try {
-    execSync(`PORT=${port} pm2 start ${path.join(repoDir, 'src', 'server.js')} --name claude-token-tracker`, {
-      encoding: 'utf-8',
-      stdio: 'pipe',
-      cwd: repoDir,
-    });
-    ok(`Started dashboard via PM2 (http://localhost:${port})`);
-    return true;
+    execSync(
+      `PORT=${port} HOST=0.0.0.0 pm2 start ${path.join(repoDir, 'src', 'server.js')} --name claude-token-tracker`,
+      { encoding: 'utf-8', stdio: 'pipe', cwd: repoDir }
+    );
+    ok(`Dashboard started (http://0.0.0.0:${port} -- accessible on network)`);
   } catch (e) {
     warn('Could not start PM2 process: ' + e.message);
     return false;
   }
+
+  // Persist so PM2 resurrects after reboot
+  try {
+    execSync('pm2 save', { encoding: 'utf-8', stdio: 'pipe' });
+    ok('PM2 process list saved (survives PM2 restarts)');
+  } catch {
+    warn('pm2 save failed -- process list not persisted');
+  }
+
+  // Register PM2 with the OS init system so it starts on every reboot
+  // pm2 startup exits with code 1 and writes to stderr — capture both streams
+  let startupOutput = '';
+  try {
+    startupOutput = execSync('pm2 startup', { encoding: 'utf-8', stdio: 'pipe' });
+  } catch (e) {
+    startupOutput = (e.stdout || '') + (e.stderr || '');
+  }
+  const sudoLine = startupOutput.split('\n').find(l => /^\s*sudo\s+/.test(l));
+  if (sudoLine) {
+    try {
+      execSync(sudoLine.trim(), { encoding: 'utf-8', stdio: 'pipe' });
+      ok('PM2 registered with system startup (auto-starts on reboot)');
+    } catch {
+      // sudo requires a password — show the command for the user to run once
+      warn('Run this once to make the dashboard survive reboots:');
+      info(sudoLine.trim());
+    }
+  } else {
+    ok('PM2 startup already registered with init system');
+  }
+
+  return true;
 }
 
 function runDiagnostics() {
