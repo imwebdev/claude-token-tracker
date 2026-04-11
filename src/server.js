@@ -386,7 +386,7 @@ const server = http.createServer((req, res) => {
 });
 
 if (require.main === module) {
-  const HOST = process.env.HOST || '127.0.0.1';
+  const HOST = process.env.HOST || '0.0.0.0';
   server.listen(PORT, HOST, () => {
     console.log(`Claude Token Coach: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   });
