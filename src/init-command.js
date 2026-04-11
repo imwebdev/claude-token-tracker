@@ -272,9 +272,10 @@ function runDiagnostics() {
     session_id: 'doctor-test',
   });
   try {
+    // Use `input` option instead of shell echo pipe — cross-platform safe (avoids cmd.exe on Windows)
     const result = execSync(
-      `echo '${testInput.replace(/'/g, "'\\''")}' | node "${hookScript}"`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
+      `node "${hookScript}"`,
+      { encoding: 'utf-8', input: testInput, stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
     );
     const parsed = JSON.parse(result);
     if (parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext) {
@@ -313,7 +314,10 @@ function runDiagnostics() {
   // 9. Verify settings.json hook path matches this repo
   total++;
   const hookCmd = settings.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command || '';
-  if (hookCmd.includes(hookScript)) {
+  // Normalize paths for comparison: strip quotes, normalize separators (Windows compat)
+  const hookCmdNorm = hookCmd.replace(/"/g, '').replace(/\\/g, '/');
+  const hookScriptNorm = hookScript.replace(/\\/g, '/');
+  if (hookCmdNorm.includes(hookScriptNorm)) {
     ok('Hook path in settings.json matches this repo');
     pass++;
   } else if (hookCmd.includes('hook-router.js')) {
@@ -351,9 +355,10 @@ function verifyHookWorks(repoDir) {
   });
 
   try {
+    // Use `input` option instead of shell echo pipe — cross-platform safe (avoids cmd.exe on Windows)
     const result = execSync(
-      `echo '${testInput.replace(/'/g, "'\\''")}' | node "${hookScript}"`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
+      `node "${hookScript}"`,
+      { encoding: 'utf-8', input: testInput, stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
     );
 
     // Should return JSON with hookSpecificOutput containing additionalContext
