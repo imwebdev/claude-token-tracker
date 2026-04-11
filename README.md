@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="https://img.shields.io/npm/v/claude-token-tracker" alt="npm version" />
   <img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="zero dependencies" />
   <img src="https://img.shields.io/badge/node-%3E%3D18-blue" alt="node >= 18" />
   <img src="https://img.shields.io/badge/license-MIT-orange" alt="MIT license" />
@@ -24,6 +25,14 @@
 
 ## Install
 
+**Option 1 — npx (no clone needed):**
+
+```bash
+npx claude-token-tracker init
+```
+
+**Option 2 — clone (easier to update):**
+
 ```bash
 git clone https://github.com/imwebdev/claude-token-tracker.git
 cd claude-token-tracker
@@ -38,19 +47,24 @@ No `npm install` needed. Zero dependencies. Seriously — zero.
 
 ## Update
 
-When a new version is released, run this from the repo folder:
+**npx users** — re-run init to pull the latest version:
+
+```bash
+npx claude-token-tracker@latest init
+```
+
+**Clone users** — run from the repo folder:
 
 ```bash
 cd claude-token-tracker
 node bin/cli.js update
 ```
 
-This pulls the latest code and restarts the dashboard. No reinstall needed.
-
 Verify everything is working:
 
 ```bash
-node bin/cli.js doctor
+npx claude-token-tracker doctor
+# or: node bin/cli.js doctor
 ```
 
 All checks should pass. If any fail, the output tells you exactly what to fix.

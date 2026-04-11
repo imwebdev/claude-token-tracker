@@ -483,8 +483,36 @@ function parsePort(args) {
   return null;
 }
 
+/**
+ * Return a stable on-disk path for the package.
+ * - Git clone  → the clone directory (has a .git folder)
+ * - Global npm → the global node_modules entry  (stable)
+ * - npx cache  → install globally then return global path
+ */
+function resolveStableRepoDir() {
+  const selfDir = path.resolve(path.join(__dirname, '..'));
+  // Already a git clone — path is stable
+  if (fs.existsSync(path.join(selfDir, '.git'))) return selfDir;
+  // Running from a global install (not an npx temp cache)
+  if (!selfDir.includes('_npx')) return selfDir;
+  // Running from npx temp cache — install globally so hooks survive cache cleans
+  info('Running via npx — installing globally for persistent hooks...');
+  try {
+    execSync('npm install -g claude-token-tracker', { encoding: 'utf-8', stdio: 'inherit' });
+    const globalRoot = execSync('npm root -g', { encoding: 'utf-8', stdio: 'pipe' }).trim();
+    const globalDir = path.join(globalRoot, 'claude-token-tracker');
+    if (fs.existsSync(globalDir)) {
+      ok(`Installed to ${globalDir}`);
+      return globalDir;
+    }
+  } catch (e) {
+    warn('Global install failed — hooks may break if npm cache is cleared. Run: npm install -g claude-token-tracker');
+  }
+  return selfDir; // best-effort fallback
+}
+
 function printInit(args = []) {
-  const repoDir = path.resolve(path.join(__dirname, '..'));
+  const repoDir = resolveStableRepoDir();
   const isDiagnose = args.includes('--doctor') || args.includes('doctor');
 
   if (isDiagnose) {
@@ -541,12 +569,19 @@ function printInit(args = []) {
   // Step 5: PM2 dashboard
   setupPm2(repoDir);
 
-  // Step 6: npm link (makes `claude-tokens` and `token-coach` available globally)
-  try {
-    execSync('npm link 2>/dev/null', { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' });
-    ok('Global commands installed (claude-tokens, token-coach)');
-  } catch {
-    info('Could not run npm link -- run with sudo or use: node bin/cli.js <command>');
+  // Step 6: Ensure global CLI commands are available
+  const isGitClone = fs.existsSync(path.join(repoDir, '.git'));
+  if (isGitClone) {
+    // Git clone: npm link wires up the bin entries from the local package
+    try {
+      execSync('npm link 2>/dev/null', { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' });
+      ok('Global commands installed: claude-tokens, token-coach, claude-token-tracker');
+    } catch {
+      info('Could not run npm link -- use: node bin/cli.js <command>');
+    }
+  } else {
+    // npm/npx install: bin entries are wired by npm automatically
+    ok('Global commands available: claude-tokens, token-coach, claude-token-tracker');
   }
 
   // Step 7: Validate router
@@ -568,7 +603,9 @@ function printInit(args = []) {
   console.log(`  ${yellow}Exit Claude Code completely and relaunch it.${reset}`);
   console.log(`  ${yellow}Hooks do not take effect until you restart.${reset}`);
   console.log('');
-  console.log(`  Run ${bold}node bin/cli.js doctor${reset} anytime to check health.\n`);
+  const isGitCloneCheck = fs.existsSync(path.join(repoDir, '.git'));
+  const doctorCmd = isGitCloneCheck ? 'node bin/cli.js doctor' : 'claude-tokens doctor';
+  console.log(`  Run ${bold}${doctorCmd}${reset} anytime to check health.\n`);
 }
 
 module.exports = { printInit, runDiagnostics };
