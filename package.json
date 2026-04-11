@@ -1,19 +1,48 @@
 {
   "name": "claude-token-tracker",
   "version": "1.0.0",
-  "description": "Token usage dashboard and efficiency tracker for Claude Code",
+  "description": "Stop burning money on Claude Code. Routes each prompt to the cheapest capable model and shows you a real-time cost dashboard.",
   "main": "src/server.js",
   "bin": {
     "claude-tokens": "./bin/cli.js",
-    "token-coach": "./bin/cli.js"
+    "token-coach": "./bin/cli.js",
+    "claude-token-tracker": "./bin/cli.js"
   },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js"
   },
-  "keywords": ["claude", "claude-code", "tokens", "usage", "dashboard"],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "tokens",
+    "token-tracker",
+    "usage",
+    "dashboard",
+    "cost",
+    "model-routing",
+    "haiku",
+    "sonnet",
+    "opus"
+  ],
   "license": "MIT",
+  "homepage": "https://github.com/imwebdev/claude-token-tracker#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imwebdev/claude-token-tracker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/imwebdev/claude-token-tracker/issues"
+  },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "public/",
+    "CLAUDE.md",
+    "CLAUDE-SNIPPET.md"
+  ]
 }
