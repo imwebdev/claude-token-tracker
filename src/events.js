@@ -289,9 +289,49 @@ function getLastRoutingDecision(sessionId) {
   return decisions.length > 0 ? decisions[decisions.length - 1] : null;
 }
 
+/**
+ * Get feedback loop stats: how many user_feedback events have been collected,
+ * and what fraction said the model was correct.
+ */
+function getFeedbackStats() {
+  const feedbackEvents = readEvents({ type: 'user_feedback' });
+  const total = feedbackEvents.length;
+  const correct = feedbackEvents.filter(e => e.was_correct === true).length;
+  const incorrect = feedbackEvents.filter(e => e.was_correct === false).length;
+  return {
+    total,
+    correct,
+    incorrect,
+    accuracy: total > 0 ? Math.round(correct / total * 100) : null,
+  };
+}
+
+/**
+ * Delete event JSONL files older than `days` days.
+ * Called on dashboard load to enforce history retention.
+ */
+function pruneOldEvents(days) {
+  ensureDirs();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const files = fs.readdirSync(EVENTS_DIR).filter(f => f.endsWith('.jsonl'));
+  let pruned = 0;
+  for (const f of files) {
+    const date = f.replace('.jsonl', '');
+    if (date < cutoffStr) {
+      fs.unlinkSync(path.join(EVENTS_DIR, f));
+      pruned++;
+    }
+  }
+  return pruned;
+}
+
 module.exports = {
   logEvent,
   readEvents,
+  pruneOldEvents,
   getRoutingStats,
   getSessionCosts,
   getSessionCost,
@@ -299,6 +339,7 @@ module.exports = {
   getTokenHogs,
   getSessionEvents,
   getLastRoutingDecision,
+  getFeedbackStats,
   DATA_DIR,
   EVENTS_DIR,
 };

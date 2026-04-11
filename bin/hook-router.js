@@ -56,14 +56,47 @@ function handleSessionStart(input) {
 // Correction patterns — user is unhappy with previous turn's result
 const CORRECTION_PATTERNS = /^(no[,. !]|wrong|that's not right|try again|fix (this|that|it)|redo|not what i|that didn't work|still broken|nope|incorrect)/i;
 
+// Feedback loop: bare y/n reply pattern
+const FEEDBACK_REPLY_PATTERN = /^[yn]$/i;
+
 function handleUserPromptSubmit(input) {
   const prompt = input.prompt || '';
+  const trimmed = prompt.trim();
 
-  // Skip very short prompts (commands, yes/no answers)
+  // ── Feedback ingestion: check if this is a y/n reply to a pending feedback request ──
+  try {
+    if (FEEDBACK_REPLY_PATTERN.test(trimmed)) {
+      const pending = events.getSessionEvents(input.session_id, { type: 'feedback_pending', limit: 1 });
+      const last = pending[pending.length - 1];
+      if (last) {
+        const wasCorrect = /^y$/i.test(trimmed);
+        events.logEvent('user_feedback', {
+          session_id: input.session_id,
+          project: getProject(input),
+          family: last.family,
+          recommended_model: last.recommended_model,
+          was_correct: wasCorrect,
+        });
+        if (!wasCorrect) {
+          // Log a correction signal so the learner picks it up
+          events.logEvent('outcome_correction', {
+            session_id: input.session_id,
+            project: getProject(input),
+            prior_family: last.family,
+            prior_model: last.recommended_model,
+            prompt_preview: '[user feedback: wrong model]',
+          });
+        }
+        // Don't classify this as a task — return early with no context injection
+        return null;
+      }
+    }
+  } catch (_) { /* never break on feedback ingestion */ }
+
+  // Skip very short prompts (commands, yes/no answers that weren't feedback)
   if (prompt.length < 10) return null;
 
   // ── Correction detection: check if this prompt is correcting the previous turn ──
-  const trimmed = prompt.trim();
   if (CORRECTION_PATTERNS.test(trimmed)) {
     const lastDecision = events.getLastRoutingDecision(input.session_id);
     if (lastDecision) {
@@ -374,6 +407,34 @@ function handleStop(input) {
       was_escalated: wasEscalated,
     });
   }
+
+  // ── Feedback loop: maybe ask user to confirm model choice ──
+  try {
+    const config = require(path.join(ROOT, 'src', 'config'));
+    const cfg = config.read();
+    if (cfg.feedback_loop_enabled && lastDecision) {
+      const family = (lastDecision.classification || {}).family || 'unknown';
+      const recModel = lastDecision.recommended_model || 'opus';
+      const confidence = (lastDecision.classification || {}).confidence || 0;
+
+      // Skip high-confidence decisions — learner doesn't need feedback there
+      const shouldSample = confidence < 0.7 && Math.random() < (cfg.feedback_loop_sample_rate || 0.1);
+      if (shouldSample) {
+        events.logEvent('feedback_pending', {
+          session_id: input.session_id,
+          project: getProject(input),
+          family,
+          recommended_model: recModel,
+        });
+        return {
+          hookSpecificOutput: {
+            hookEventName: 'Stop',
+            additionalContext: `[token-coach feedback] DISPLAY: Append exactly this line at the very end of your response, after all other content: "(Was ${recModel} the right model? y/n)"`,
+          },
+        };
+      }
+    }
+  } catch (_) { /* never break on feedback logic */ }
 
   return null;
 }

@@ -200,21 +200,22 @@ function setupPm2(repoDir) {
       `PORT=${port} HOST=0.0.0.0 pm2 start ${path.join(repoDir, 'src', 'server.js')} --name claude-token-tracker`,
       { encoding: 'utf-8', stdio: 'pipe', cwd: repoDir }
     );
-    ok(`Dashboard started (http://localhost:${port})`);
+    ok(`Dashboard started (http://0.0.0.0:${port} -- accessible on network)`);
   } catch (e) {
     warn('Could not start PM2 process: ' + e.message);
     return false;
   }
 
-  // Persist so PM2 resurrects after pm2 restart/kill
+  // Persist so PM2 resurrects after reboot
   try {
     execSync('pm2 save', { encoding: 'utf-8', stdio: 'pipe' });
-    ok('PM2 process list saved');
+    ok('PM2 process list saved (survives PM2 restarts)');
   } catch {
-    warn('pm2 save failed -- dashboard won\'t survive PM2 restarts');
+    warn('pm2 save failed -- process list not persisted');
   }
 
-  // Register with OS init system for auto-start on reboot
+  // Register PM2 with the OS init system so it starts on every reboot
+  // pm2 startup exits with code 1 and writes to stderr — capture both streams
   let startupOutput = '';
   try {
     startupOutput = execSync('pm2 startup', { encoding: 'utf-8', stdio: 'pipe' });
@@ -348,9 +349,10 @@ function runDiagnostics() {
     session_id: 'doctor-test',
   });
   try {
+    // Use `input` option instead of shell echo pipe — cross-platform safe (avoids cmd.exe on Windows)
     const result = execSync(
-      `echo '${testInput.replace(/'/g, "'\\''")}' | node "${hookScript}"`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
+      `node "${hookScript}"`,
+      { encoding: 'utf-8', input: testInput, stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
     );
     const parsed = JSON.parse(result);
     if (parsed.hookSpecificOutput && parsed.hookSpecificOutput.additionalContext) {
@@ -389,7 +391,10 @@ function runDiagnostics() {
   // 9. Verify settings.json hook path matches this repo
   total++;
   const hookCmd = settings.hooks?.UserPromptSubmit?.[0]?.hooks?.[0]?.command || '';
-  if (hookCmd.includes(hookScript)) {
+  // Normalize paths for comparison: strip quotes, normalize separators (Windows compat)
+  const hookCmdNorm = hookCmd.replace(/"/g, '').replace(/\\/g, '/');
+  const hookScriptNorm = hookScript.replace(/\\/g, '/');
+  if (hookCmdNorm.includes(hookScriptNorm)) {
     ok('Hook path in settings.json matches this repo');
     pass++;
   } else if (hookCmd.includes('hook-router.js')) {
@@ -427,9 +432,10 @@ function verifyHookWorks(repoDir) {
   });
 
   try {
+    // Use `input` option instead of shell echo pipe — cross-platform safe (avoids cmd.exe on Windows)
     const result = execSync(
-      `echo '${testInput.replace(/'/g, "'\\''")}' | node "${hookScript}"`,
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
+      `node "${hookScript}"`,
+      { encoding: 'utf-8', input: testInput, stdio: ['pipe', 'pipe', 'pipe'], timeout: 10000 }
     );
 
     // Should return JSON with hookSpecificOutput containing additionalContext

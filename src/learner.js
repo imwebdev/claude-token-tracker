@@ -18,7 +18,10 @@
  */
 const events = require('./events');
 
-const MIN_SAMPLES = 5;
+// Require more outcomes before acting — "turn completed" is a weak signal
+// (almost always true), so we need volume to let corrections outweigh it.
+// Raise once user_feedback events are being collected regularly.
+const MIN_SAMPLES = 20;
 const RECENCY_DAYS = 14;
 const CACHE_TTL = 300_000; // 5 minutes
 
@@ -196,9 +199,12 @@ function getAdjustment(family, recommendedModel) {
     }
   }
 
-  // Very high success (>0.85) on non-cheapest model — suggest downgrading to save cost.
+  // Very high success on non-cheapest model — suggest downgrading to save cost.
+  // Threshold is 0.95 (not 0.85) because "turn completed" is an almost-always-true signal.
+  // Only downgrade when the evidence is overwhelming, and even then require user feedback
+  // corrections to be sparse. Once feedback_loop is active, "n" replies lower the rate naturally.
   // NOTE: checked BEFORE the >0.80 confirm threshold, otherwise this branch is dead code.
-  if (rate >= 0.85 && recommendedModel !== 'haiku') {
+  if (rate >= 0.95 && recommendedModel !== 'haiku') {
     const downgrade = recommendedModel === 'opus' ? 'sonnet' : recommendedModel === 'sonnet' ? 'haiku' : null;
     if (downgrade) {
       const downgradeKey = `${family}:${downgrade}`;

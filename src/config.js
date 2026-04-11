@@ -25,6 +25,17 @@ const DEFAULTS = {
   // Force model override: when set, bypasses all routing logic and uses this model for every task.
   // null = normal routing; 'haiku' | 'sonnet' | 'opus' = locked override.
   force_model: null,
+
+  // How many days of event history to keep. Older JSONL files are pruned on dashboard load.
+  history_days: 14,
+
+  // Feedback loop: ask users to confirm model choice after a turn.
+  // OFF by default — users opt in via dashboard toggle.
+  feedback_loop_enabled: false,
+
+  // Fraction of turns to ask for feedback (0.0–1.0). Default: ask 1 in 10.
+  // High-confidence classifications (≥0.7) skip regardless of this setting.
+  feedback_loop_sample_rate: 0.1,
 };
 
 let _cache = null;

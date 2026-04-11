@@ -23,6 +23,10 @@ if (command === 'serve' || command === 'dashboard') {
   runTaskCommand(args.slice(1).filter(arg => !arg.startsWith('--')).join(' '), args.slice(1));
 } else if (command === 'audit') {
   printAudit();
+} else if (command === 'validate-log' || command === 'validate') {
+  require(path.join(__dirname, '..', 'src', 'validate-log-command')).runValidateLog(args.slice(1));
+} else if (command === 'benchmark-classifier' || command === 'bench-classifier') {
+  require(path.join(__dirname, '..', 'test', 'classifier-benchmark')).run();
 } else if (command === 'benchmark') {
   printBenchmarks();
 } else if (command === 'init' || command === 'setup') {

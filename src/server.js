@@ -9,7 +9,84 @@ const { getLearningStats } = require('./learner');
 const { calculateCounterfactual, calculateDailySavings } = require('./calculator');
 
 const config = require('./config');
+const os = require('os');
 const PORT = process.env.PORT || config.read().dashboard_port || 6099;
+
+const CLAUDE_SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
+const HOOK_ROUTER_MARKER = 'hook-router.js';
+const DISABLED_HOOKS_PATH = path.join(os.homedir(), '.token-coach', 'disabled-hooks.json');
+
+function readClaudeSettings() {
+  try { return JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf-8')); } catch { return {}; }
+}
+
+function writeClaudeSettings(settings) {
+  fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(settings, null, 4), 'utf-8');
+}
+
+function getHooksStatus() {
+  const settings = readClaudeSettings();
+  const hooks = settings.hooks || {};
+  for (const hookList of Object.values(hooks)) {
+    for (const entry of hookList) {
+      for (const h of entry.hooks || []) {
+        if (h.command && h.command.includes(HOOK_ROUTER_MARKER)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function disableHooks() {
+  const settings = readClaudeSettings();
+  const hooks = settings.hooks || {};
+  const removed = {};
+
+  for (const [event, hookList] of Object.entries(hooks)) {
+    const kept = [];
+    const stripped = [];
+    for (const entry of hookList) {
+      const keptHooks = [];
+      const strippedHooks = [];
+      for (const h of entry.hooks || []) {
+        if (h.command && h.command.includes(HOOK_ROUTER_MARKER)) {
+          strippedHooks.push(h);
+        } else {
+          keptHooks.push(h);
+        }
+      }
+      if (strippedHooks.length) {
+        stripped.push({ ...entry, hooks: strippedHooks });
+        if (keptHooks.length) kept.push({ ...entry, hooks: keptHooks });
+      } else {
+        kept.push(entry);
+      }
+    }
+    if (stripped.length) removed[event] = stripped;
+    if (kept.length) hooks[event] = kept;
+    else delete hooks[event];
+  }
+
+  settings.hooks = hooks;
+  writeClaudeSettings(settings);
+  fs.writeFileSync(DISABLED_HOOKS_PATH, JSON.stringify(removed, null, 2), 'utf-8');
+}
+
+function enableHooks() {
+  if (!fs.existsSync(DISABLED_HOOKS_PATH)) return;
+  const removed = JSON.parse(fs.readFileSync(DISABLED_HOOKS_PATH, 'utf-8'));
+  const settings = readClaudeSettings();
+  const hooks = settings.hooks || {};
+
+  for (const [event, entries] of Object.entries(removed)) {
+    if (!hooks[event]) hooks[event] = [];
+    hooks[event].push(...entries);
+  }
+
+  settings.hooks = hooks;
+  writeClaudeSettings(settings);
+  fs.unlinkSync(DISABLED_HOOKS_PATH);
+}
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const MIME = {
@@ -78,6 +155,10 @@ function extendStatsWithHistory(stats, history, dailyLogs) {
 }
 
 function buildDashboardData() {
+  // Prune old events on every dashboard load (silent, fast)
+  const cfg = config.read();
+  events.pruneOldEvents(cfg.history_days || 14);
+
   const stats = parser.readStatsCache();
   const history = parser.readHistory();
   const sessions = parser.readSessions();
@@ -149,9 +230,9 @@ function buildDashboardData() {
     };
   }
 
-  // Live routing events from hooks
+  // Live routing events from hooks — no limit, read full history
   const routingStats = events.getRoutingStats();
-  const recentEvents = events.readEvents({ limit: 500 });
+  const recentEvents = events.readEvents({});
 
   // Merge hook routing_decision events into the taskLog so "All Time" timeline is complete
   const hookDecisions = recentEvents.filter(e => e.type === 'routing_decision');
@@ -234,8 +315,82 @@ function buildDashboardData() {
       tasks: hookTasks,
     };
     routing.delegationRate = todayDecisions.length > 0
-      ? (todayDispatches.length / todayDecisions.length * 100) : 0;
+      ? Math.round(todayDispatches.length / todayDecisions.length * 100) : 0;
   }
+
+  // Build per-day breakdown from recentEvents (already loaded, no limit)
+  const dailyBreakdown = {};
+  for (const ev of recentEvents) {
+    if (!ev.ts) continue;
+    const day = ev.ts.slice(0, 10);
+    if (!dailyBreakdown[day]) dailyBreakdown[day] = { date: day, decisions: 0, dispatches: 0, models: { opus: 0, sonnet: 0, haiku: 0 }, cost: 0 };
+    const d = dailyBreakdown[day];
+    if (ev.type === 'routing_decision') {
+      d.decisions++;
+      const m = ev.recommended_model || 'sonnet';
+      d.models[m] = (d.models[m] || 0) + 1;
+    }
+    if (ev.type === 'subagent_dispatch') d.dispatches++;
+  }
+  // Rough per-call cost estimates
+  const MODEL_COST = { opus: 0.10, sonnet: 0.03, haiku: 0.005 };
+  for (const d of Object.values(dailyBreakdown)) {
+    d.cost = (d.models.opus || 0) * MODEL_COST.opus + (d.models.sonnet || 0) * MODEL_COST.sonnet + (d.models.haiku || 0) * MODEL_COST.haiku;
+    d.delegationRate = d.decisions > 0 ? Math.round(d.dispatches / d.decisions * 100) : 0;
+    // Per-day efficiency grade
+    const total = (d.models.opus || 0) + (d.models.sonnet || 0) + (d.models.haiku || 0);
+    const cheapPct = total > 0 ? Math.round(((d.models.sonnet || 0) + (d.models.haiku || 0)) / total * 100) : 0;
+    const opusPct = total > 0 ? Math.round((d.models.opus || 0) / total * 100) : 0;
+    d.grade = cheapPct >= 70 && d.delegationRate >= 30 ? 'A'
+      : cheapPct >= 50 ? 'B'
+      : cheapPct >= 30 ? 'C' : 'D';
+    d.cheapPct = cheapPct;
+    d.opusPct = opusPct;
+  }
+  const dailyBreakdownArr = Object.values(dailyBreakdown).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30);
+
+  // Compute efficiency analysis
+  function computeAnalysis(todayTokenUsage, recentEvts, routingData) {
+    const bm = todayTokenUsage?.byModel || {};
+    const opusCalls = bm.opus?.calls || 0;
+    const sonnetCalls = bm.sonnet?.calls || 0;
+    const haikuCalls = bm.haiku?.calls || 0;
+    const totalCalls = opusCalls + sonnetCalls + haikuCalls;
+    const cheapPct = totalCalls > 0 ? Math.round((sonnetCalls + haikuCalls) / totalCalls * 100) : 0;
+    const opusPct = totalCalls > 0 ? Math.round(opusCalls / totalCalls * 100) : 0;
+    const haikuPct = totalCalls > 0 ? Math.round(haikuCalls / totalCalls * 100) : 0;
+    const delegationRate = Math.round(routingData?.delegationRate || 0);
+    const todayCost = todayTokenUsage?.totalCost || 0;
+    const sessions = todayTokenUsage?.bySession || {};
+    const sessionList = Object.entries(sessions);
+    const longSessions = sessionList.filter(([, s]) => (s.calls || 0) > 30);
+
+    // Determine grade
+    let grade, gradeSummary;
+    if (totalCalls === 0) {
+      grade = null; gradeSummary = 'No activity yet today';
+    } else if (cheapPct >= 70 && delegationRate >= 30) {
+      grade = 'A'; gradeSummary = `${cheapPct}% of tasks on sonnet/haiku — excellent routing`;
+    } else if (cheapPct >= 50) {
+      grade = 'B'; gradeSummary = `${cheapPct}% on cheaper models — good, room to improve`;
+    } else if (cheapPct >= 30) {
+      grade = 'C'; gradeSummary = `${opusPct}% of calls on opus — routing underutilised`;
+    } else {
+      grade = 'D'; gradeSummary = `${opusPct}% opus — most tasks could use cheaper models`;
+    }
+
+    // Build tips
+    const tips = [];
+    if (opusPct > 50 && totalCalls > 0) tips.push('Most tasks are running on opus. Start sessions with the sonnet model to let routing kick in.');
+    if (longSessions.length > 0) tips.push(`${longSessions.length} session${longSessions.length > 1 ? 's' : ''} exceeded 30 prompts. Use /compact or start fresh to reduce context costs.`);
+    if (delegationRate < 20 && totalCalls > 5) tips.push('Delegation rate is low. Task-type hints in prompts (e.g. "search for…", "read this file") help the router pick cheaper models.');
+    if (haikuPct < 5 && totalCalls > 10) tips.push('Haiku is rarely used. Simple lookups, searches, and reads are good haiku candidates.');
+    if (todayCost > 3) tips.push(`High spend today ($${todayCost.toFixed(2)}). Check the Token hogs panel to find the biggest consumers.`);
+
+    return { grade, gradeSummary, tips: tips.slice(0, 3), totalCalls, cheapPct, opusPct, delegationRate };
+  }
+
+  const analysis = computeAnalysis(parser.readSessionTokenUsage(), recentEvents, routing);
 
   return {
     stats: {
@@ -266,16 +421,17 @@ function buildDashboardData() {
       mcpEnabled: mcpServers[name]?.enabled?.length || 0,
       mcpDisabled: mcpServers[name]?.disabled?.length || 0,
     })).sort((a, b) => b.messages - a.messages),
-    taskLog: taskLog.slice(-200).reverse(),
+    taskLog: taskLog.slice(-2000).reverse(),
+    hooksEnabled: getHooksStatus(),
     runs: runs.slice(0, 200),
     dailyLogs: {
       interactions: dailyLogs.interactions,
       errors: dailyLogs.errors,
     },
-    // Live routing data from hooks
+    // Live routing data from hooks — full history, newest first
     routingEvents: {
       stats: routingStats,
-      recent: recentEvents.slice(-100).reverse(),
+      recent: recentEvents.slice().reverse(),
     },
     // Per-session cost tracking (now using real token data from session files)
     sessionCosts: events.getSessionCosts(),
@@ -292,6 +448,12 @@ function buildDashboardData() {
     },
     // User config (for dashboard UI controls)
     config: config.read(),
+    // Feedback loop stats
+    feedbackStats: events.getFeedbackStats(),
+    // Per-day routing breakdown (last 30 days)
+    dailyBreakdown: dailyBreakdownArr,
+    // Efficiency analysis / grading
+    analysis,
   };
 }
 
@@ -349,6 +511,26 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
+  }
+
+  if (req.url === '/api/hooks/status' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ enabled: getHooksStatus() }));
+    return;
+  }
+
+  if (req.url === '/api/hooks/toggle' && req.method === 'POST') {
+    try {
+      const enabled = getHooksStatus();
+      if (enabled) disableHooks();
+      else enableHooks();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ enabled: !enabled }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
   }
 
   if (req.url === '/api/dashboard') {
