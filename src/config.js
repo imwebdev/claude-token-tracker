@@ -41,6 +41,14 @@ const DEFAULTS = {
   // via PreToolUse permissionDecision: "deny". Claude sees a summary pointer
   // instead of re-reading the full file. Set to false to disable.
   read_dedupe: true,
+
+  // SessionStart project-map injection: the SessionStart hook injects a
+  // pre-built markdown map of the project (files + one-line descriptions)
+  // so Claude skips the initial exploration phase. Cached at
+  // ~/.token-coach/project-maps/ with a 24h TTL.
+  session_start_map: true,
+  session_start_map_max_chars: 32000,   // ~= 8k tokens
+  session_start_map_ttl_hours: 24,
 };
 
 let _cache = null;

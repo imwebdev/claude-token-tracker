@@ -55,8 +55,24 @@ if (command === 'serve' || command === 'dashboard') {
   printRules();
 } else if (command === 'models') {
   handleModels(args.slice(1));
+} else if (command === 'regenerate-map' || command === 'regen-map') {
+  handleRegenerateMap();
 } else {
   printSummary();
+}
+
+function handleRegenerateMap() {
+  const projectMap = require(path.join(__dirname, '..', 'src', 'project-map'));
+  const cwd = process.cwd();
+  console.log(`Regenerating project map for ${cwd}...`);
+  try {
+    const result = projectMap.generateMap(cwd);
+    console.log(`  Indexed ${result.fileCount} files -> ${result.bytes} bytes`);
+    console.log(`  Wrote ${result.path}`);
+  } catch (err) {
+    console.error(`  Failed: ${err.message}`);
+    process.exit(1);
+  }
 }
 
 function printSummary() {
