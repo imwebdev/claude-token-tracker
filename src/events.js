@@ -310,6 +310,48 @@ function getFeedbackStats() {
  * Delete event JSONL files older than `days` days.
  * Called on dashboard load to enforce history retention.
  */
+/**
+ * Aggregate read_deduper savings by day.
+ * Conservative estimate: 3.5 tokens per line (Claude tokenizes code at
+ * ~0.25–0.3 tokens/char, lines average ~14 chars — call it 3.5 for safety).
+ *
+ * @param {object} opts — { days?: number }
+ * @returns {object} { total, totalLines, totalTokens, daily: [{date, reads, lines, tokens}] }
+ */
+function getDedupeStats(opts = {}) {
+  const days = opts.days || 30;
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = since.toISOString().slice(0, 10);
+  const events = readEvents({ type: 'read_deduped', since: sinceStr });
+
+  const TOKENS_PER_LINE = 3.5;
+  const daily = {};
+  let totalLines = 0;
+
+  for (const ev of events) {
+    if (!ev.ts) continue;
+    const day = ev.ts.slice(0, 10);
+    if (!daily[day]) daily[day] = { date: day, reads: 0, lines: 0 };
+    daily[day].reads++;
+    const lc = ev.line_count || 0;
+    daily[day].lines += lc;
+    totalLines += lc;
+  }
+
+  const dailyArr = Object.values(daily)
+    .map(d => ({ ...d, tokens: Math.round(d.lines * TOKENS_PER_LINE) }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    total: events.length,
+    totalLines,
+    totalTokens: Math.round(totalLines * TOKENS_PER_LINE),
+    tokensPerLine: TOKENS_PER_LINE,
+    daily: dailyArr,
+  };
+}
+
 function pruneOldEvents(days) {
   ensureDirs();
   const cutoff = new Date();
@@ -340,6 +382,7 @@ module.exports = {
   getSessionEvents,
   getLastRoutingDecision,
   getFeedbackStats,
+  getDedupeStats,
   DATA_DIR,
   EVENTS_DIR,
 };

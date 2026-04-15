@@ -458,6 +458,9 @@ function buildDashboardData() {
     dailyCostSeries: buildDailyCostSeries(stats?.dailyModelTokens, 30),
     // Install metadata — anchor point for "cost since install" visualizations
     installDate: installMeta.readInstall()?.installed_at || null,
+    // Read-deduper: tokens saved by hard-blocking redundant reads
+    // { total, totalLines, totalTokens, tokensPerLine, daily: [{date, reads, lines, tokens}] }
+    dedupeStats: events.getDedupeStats({ days: 30 }),
     // Efficiency analysis / grading
     analysis,
   };

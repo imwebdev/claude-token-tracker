@@ -522,6 +522,14 @@ function buildHTML() {
       <div id="v-savings-body">${renderSavings(D.savings)}</div>
     </div>
 
+    <div class="card anim d1" style="margin-bottom:12px" id="v-cost-since-install-card">
+      <div class="card-hd">
+        <h2>Cost since install</h2>
+        <span class="ct" id="v-cost-since-install-ct">${D.installDate ? new Date(D.installDate).toISOString().slice(0,10) : 'not yet recorded'}</span>
+      </div>
+      <div id="v-cost-since-install-body">${renderCostSinceInstall(D)}</div>
+    </div>
+
     <div class="card anim d1" style="margin-bottom:12px">
       <div class="card-hd">
         <h2>Default model</h2>
@@ -822,6 +830,71 @@ function renderSavings(savings) {
     <span class="leg-actual">actual spend</span>
     <span class="leg-counter">if all opus</span>
     <span class="leg-saved">savings</span>
+  </div>`;
+
+  return html;
+}
+
+function renderCostSinceInstall(D) {
+  const installDate = D.installDate ? D.installDate.slice(0, 10) : null;
+  const series = D.dailyCostSeries || [];
+  const dedupe = D.dedupeStats || { total: 0, totalTokens: 0, totalLines: 0, daily: [] };
+
+  if (!installDate) {
+    return `<div class="empty">Install date not yet recorded. Run <code>node bin/cli.js init</code> to anchor the chart.</div>`;
+  }
+
+  // Filter cost series to dates >= install
+  const sinceInstall = series.filter(d => d.date >= installDate);
+  const totalCost = sinceInstall.reduce((s, d) => s + (d.cost || 0), 0);
+
+  const daysSince = Math.max(1, Math.round((Date.now() - new Date(installDate).getTime()) / 86400000));
+
+  let html = `<div class="savings-hero">
+    <div>
+      <div class="savings-big" style="color:var(--muted)">$${totalCost.toFixed(2)}</div>
+      <div class="savings-sub">actual spend since ${installDate} (${daysSince}d)</div>
+    </div>
+    <div>
+      <div class="savings-sub"><strong>${dedupe.total}</strong> redundant reads blocked</div>
+      <div class="savings-sub"><strong>~${dedupe.totalTokens.toLocaleString()}</strong> tokens saved by deduper (#81)</div>
+    </div>
+  </div>`;
+
+  if (sinceInstall.length < 2) {
+    html += `<div class="savings-sub" style="margin-top:8px">Need at least 2 days of data since install for the trend line. Check back tomorrow.</div>`;
+  } else {
+    const W = 600, H = 120, PAD = 28;
+    const maxVal = Math.max(...sinceInstall.map(d => d.cost || 0), 1);
+    const xStep = (W - PAD * 2) / (sinceInstall.length - 1);
+    const y = val => H - PAD - ((val / maxVal) * (H - PAD * 2));
+    const points = sinceInstall.map((d, i) => `${PAD + i * xStep},${y(d.cost || 0)}`);
+
+    // Install-date marker at x=0
+    const installX = PAD;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const accentStroke = isDark ? '#d4a843' : '#6d5000';
+    const markerStroke = isDark ? 'rgba(74,222,128,0.5)' : 'rgba(22,163,74,0.5)';
+
+    const labelInterval = sinceInstall.length <= 7 ? 1 : sinceInstall.length <= 14 ? 2 : 4;
+    const xLabels = sinceInstall.map((d, i) => {
+      if (i % labelInterval !== 0 && i !== sinceInstall.length - 1) return '';
+      return `<text x="${PAD + i * xStep}" y="${H - 4}" text-anchor="middle" fill="currentColor" opacity="0.4" font-size="9" font-family="var(--mono)">${d.date.slice(5)}</text>`;
+    }).join('');
+
+    const yLabel = `<text x="${PAD - 4}" y="${PAD}" text-anchor="end" fill="currentColor" opacity="0.4" font-size="9" font-family="var(--mono)">$${maxVal.toFixed(2)}</text>`;
+
+    html += `<svg class="savings-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Daily cost since install: ${sinceInstall.length} days">
+      <line x1="${installX}" y1="${PAD}" x2="${installX}" y2="${H - PAD}" stroke="${markerStroke}" stroke-width="1" stroke-dasharray="2,3" />
+      <text x="${installX + 4}" y="${PAD + 9}" fill="currentColor" opacity="0.5" font-size="9" font-family="var(--mono)">installed</text>
+      <polyline points="${points.join(' ')}" fill="none" stroke="${accentStroke}" stroke-width="2" />
+      ${xLabels}
+      ${yLabel}
+    </svg>`;
+  }
+
+  html += `<div class="savings-sub" style="margin-top:10px;line-height:1.5;border-top:1px solid var(--border);padding-top:10px">
+    <strong>Honest note:</strong> the raw trend above reflects your total Claude Code spend — it goes up when you use Claude more, down when you use it less. We don't claim this tool caused any specific change. The deduper savings (tokens blocked by #81) are the one number we attribute directly; every redundant read we blocked would otherwise have entered your context.
   </div>`;
 
   return html;
