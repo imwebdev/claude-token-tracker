@@ -6,7 +6,8 @@ const calculator = require('./calculator');
 const { generateInsights } = require('./insights');
 const events = require('./events');
 const { getLearningStats } = require('./learner');
-const { calculateCounterfactual, calculateDailySavings } = require('./calculator');
+const { calculateCounterfactual, calculateDailySavings, buildDailyCostSeries } = require('./calculator');
+const installMeta = require('./install-meta');
 
 const config = require('./config');
 const os = require('os');
@@ -452,6 +453,11 @@ function buildDashboardData() {
     feedbackStats: events.getFeedbackStats(),
     // Per-day routing breakdown (last 30 days)
     dailyBreakdown: dailyBreakdownArr,
+    // Per-day cost series built from real stats-cache token counts (last 30 days).
+    // [{ date, cost, tokens, byModel: { opus: { tokens, cost }, sonnet: ..., haiku: ... } }]
+    dailyCostSeries: buildDailyCostSeries(stats?.dailyModelTokens, 30),
+    // Install metadata — anchor point for "cost since install" visualizations
+    installDate: installMeta.readInstall()?.installed_at || null,
     // Efficiency analysis / grading
     analysis,
   };

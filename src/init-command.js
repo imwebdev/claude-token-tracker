@@ -8,6 +8,7 @@ const os = require('os');
 const { execSync } = require('child_process');
 const dataHome = require('./data-home');
 const config = require('./config');
+const installMeta = require('./install-meta');
 const { classifyTask, recommendModel } = require('./router');
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
@@ -511,6 +512,14 @@ function printInit(args = []) {
   // Step 2: Create data directories
   dataHome.ensureDataHome();
   ok(`Data directory: ${dataHome.getDataHome()}`);
+
+  // Step 2a: Record install timestamp (idempotent — only writes on first run)
+  const installInfo = installMeta.recordInstall();
+  if (installInfo.created) {
+    ok(`Install date recorded: ${installInfo.installed_at}`);
+  } else {
+    info(`Install date: ${installInfo.installed_at} (v${installInfo.version})`);
+  }
 
   // Step 3: Write default config if none exists
   const cfg = config.read();
