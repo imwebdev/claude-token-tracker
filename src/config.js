@@ -36,6 +36,11 @@ const DEFAULTS = {
   // Fraction of turns to ask for feedback (0.0–1.0). Default: ask 1 in 10.
   // High-confidence classifications (≥0.7) skip regardless of this setting.
   feedback_loop_sample_rate: 0.1,
+
+  // Read deduper: hard-block redundant Read tool calls in the same session
+  // via PreToolUse permissionDecision: "deny". Claude sees a summary pointer
+  // instead of re-reading the full file. Set to false to disable.
+  read_dedupe: true,
 };
 
 let _cache = null;

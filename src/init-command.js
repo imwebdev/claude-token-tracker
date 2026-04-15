@@ -18,6 +18,7 @@ const HOOK_SCRIPT = path.resolve(path.join(__dirname, '..', 'bin', 'hook-router.
 const HOOK_EVENTS = [
   'UserPromptSubmit',
   'PreToolUse',
+  'PostToolUse',
   'Stop',
   'StopFailure',
   'SessionStart',
