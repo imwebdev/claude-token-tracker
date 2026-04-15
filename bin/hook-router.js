@@ -20,6 +20,8 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const router = require(path.join(ROOT, 'src', 'router'));
 const events = require(path.join(ROOT, 'src', 'events'));
+const readCache = require(path.join(ROOT, 'src', 'read-cache'));
+const config = require(path.join(ROOT, 'src', 'config'));
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -281,6 +283,44 @@ function handleUserPromptSubmit(input) {
 function handlePreToolUse(input) {
   const toolName = input.tool_name || '';
   const toolInput = input.tool_input || {};
+  const sessionId = input.session_id;
+
+  // ── Read deduper: hard-block redundant reads in the same session ──
+  if (toolName === 'Read') {
+    let cfg = {};
+    try { cfg = config.read(); } catch {}
+    if (cfg.read_dedupe !== false) {
+      const absPath = toolInput.file_path;
+      const hasRange = toolInput.offset != null || toolInput.limit != null;
+      // Only dedupe full-file reads. If Claude asks for a specific range, let it through —
+      // the cached summary can't substitute for a targeted slice.
+      if (absPath && !hasRange) {
+        try { readCache.prune(); } catch {}
+        const hit = readCache.lookup(sessionId, absPath);
+        if (hit) {
+          events.logEvent('read_deduped', {
+            session_id: sessionId,
+            project: getProject(input),
+            file_path: absPath,
+            line_count: hit.lineCount,
+            first_read_at: hit.firstRead,
+          });
+          const reason = readCache.summarize(absPath, hit);
+          return {
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason: reason,
+              additionalContext: `[token-coach] ${reason} If you truly need a fresh read (file may have changed), use an explicit offset/limit range.`,
+            },
+          };
+        }
+        // Cache miss — record the read so future duplicates are caught.
+        try { readCache.record(sessionId, absPath); } catch {}
+      }
+    }
+    // Fall through (no other Read-specific behavior).
+  }
 
   if (toolName === 'Agent') {
     const model = toolInput.model || 'opus';
@@ -360,6 +400,21 @@ function handlePreToolUse(input) {
     });
   }
 
+  return null;
+}
+
+function handlePostToolUse(input) {
+  const toolName = input.tool_name || '';
+  const toolInput = input.tool_input || {};
+  const sessionId = input.session_id;
+
+  // Invalidate read cache when a file is modified
+  if (toolName === 'Write' || toolName === 'Edit' || toolName === 'MultiEdit' || toolName === 'NotebookEdit') {
+    const fp = toolInput.file_path || toolInput.notebook_path;
+    if (fp && sessionId) {
+      try { readCache.invalidate(sessionId, fp); } catch {}
+    }
+  }
   return null;
 }
 
@@ -483,6 +538,9 @@ async function main() {
       break;
     case 'PreToolUse':
       output = handlePreToolUse(input);
+      break;
+    case 'PostToolUse':
+      output = handlePostToolUse(input);
       break;
     case 'SubagentStop':
       output = handleSubagentStop(input);
