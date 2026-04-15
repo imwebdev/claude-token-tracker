@@ -224,6 +224,56 @@ function calculateDailySavings(dailyModelTokens, days = 14) {
   });
 }
 
+/**
+ * Build a first-class per-day cost series from stats-cache dailyModelTokens.
+ * Uses real token counts (not hardcoded per-call estimates) and blended
+ * input/output/cache pricing per model tier.
+ *
+ * Each entry: { date, cost, tokens, byModel: { opus: { tokens, cost }, ... } }
+ *
+ * @param {Array} dailyModelTokens — [{ date, tokensByModel: { "<modelId>": N } }]
+ * @param {number} days — tail window size (default 30)
+ */
+function buildDailyCostSeries(dailyModelTokens, days = 30) {
+  if (!Array.isArray(dailyModelTokens) || dailyModelTokens.length === 0) return [];
+
+  // Blended cost-per-token derived from typical Claude Code usage mix:
+  // ~60% cache-read, ~30% input, ~8% output, ~2% cache-write.
+  function blendedRate(modelId) {
+    const p = getModelPrice(modelId);
+    return (p.input * 0.30 + p.output * 0.08 + p.cacheRead * 0.60 + p.cacheWrite * 0.02);
+  }
+
+  const m = 1_000_000;
+  return dailyModelTokens.slice(-days).map(d => {
+    let totalCost = 0;
+    let totalTokens = 0;
+    const byModel = {};
+
+    for (const [modelId, tokens] of Object.entries(d.tokensByModel || {})) {
+      const tier = getModelTier(modelId);
+      const cost = (tokens / m) * blendedRate(modelId);
+      totalCost += cost;
+      totalTokens += tokens;
+      if (!byModel[tier]) byModel[tier] = { tokens: 0, cost: 0 };
+      byModel[tier].tokens += tokens;
+      byModel[tier].cost += cost;
+    }
+
+    // Round for JSON compactness
+    for (const tier of Object.keys(byModel)) {
+      byModel[tier].cost = Math.round(byModel[tier].cost * 10000) / 10000;
+    }
+
+    return {
+      date: d.date,
+      cost: Math.round(totalCost * 10000) / 10000,
+      tokens: totalTokens,
+      byModel,
+    };
+  });
+}
+
 module.exports = {
   PRICING,
   getModelPrice,
@@ -234,4 +284,5 @@ module.exports = {
   estimateSessionCost,
   calculateCounterfactual,
   calculateDailySavings,
+  buildDailyCostSeries,
 };
