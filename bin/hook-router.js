@@ -22,6 +22,7 @@ const router = require(path.join(ROOT, 'src', 'router'));
 const events = require(path.join(ROOT, 'src', 'events'));
 const readCache = require(path.join(ROOT, 'src', 'read-cache'));
 const config = require(path.join(ROOT, 'src', 'config'));
+const projectMap = require(path.join(ROOT, 'src', 'project-map'));
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -51,8 +52,46 @@ function handleSessionStart(input) {
     project: getProject(input),
     source: input.source,
   });
-  // No output needed
-  return null;
+
+  // Inject project map to skip the exploration phase.
+  // Opt-out: set session_start_map: false in ~/.token-coach/config.json.
+  let cfg = {};
+  try { cfg = config.read(); } catch {}
+  if (cfg.session_start_map === false) return null;
+
+  const cwd = input.cwd;
+  if (!cwd) return null;
+
+  try {
+    const result = projectMap.getOrGenerate(cwd, {
+      maxChars: cfg.session_start_map_max_chars || projectMap.DEFAULT_MAX_CHARS,
+      ttlHours: cfg.session_start_map_ttl_hours || projectMap.DEFAULT_TTL_HOURS,
+    });
+    if (!result || !result.md) return null;
+
+    events.logEvent('project_map_injected', {
+      session_id: input.session_id,
+      project: getProject(input),
+      from_cache: !!result.fromCache,
+      file_count: result.fileCount,
+      bytes: Buffer.byteLength(result.md),
+    });
+
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext: result.md,
+      },
+    };
+  } catch (err) {
+    // Never break session start — log and continue
+    events.logEvent('project_map_error', {
+      session_id: input.session_id,
+      project: getProject(input),
+      message: err.message,
+    });
+    return null;
+  }
 }
 
 // Correction patterns — user is unhappy with previous turn's result
