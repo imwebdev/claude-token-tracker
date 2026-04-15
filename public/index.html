@@ -784,7 +784,7 @@ function renderSavings(savings) {
   const todayStr = new Date().toISOString().slice(0, 10);
   // Add today if not already in daily
   if (!chartData.length || chartData[chartData.length - 1].date !== todayStr) {
-    chartData.push({ date: todayStr, actual: Math.round((t.actual || 0) * 100) / 100, counterfactual: Math.round((t.counterfactual || 0) * 100) / 100, savings: Math.round(todaySavings * 100) / 100 });
+    chartData.push({ date: todayStr, actual: Math.round((t.actual || 0) * 100) / 100, counterfactual: Math.round((t.counterfactual || 0) * 100) / 100, savings: Math.round(todayGap * 100) / 100 });
   }
 
   if (chartData.length < 2) {
