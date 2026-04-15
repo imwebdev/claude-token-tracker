@@ -516,8 +516,8 @@ function buildHTML() {
 
     <div class="card anim d1" style="margin-bottom:12px">
       <div class="card-hd">
-        <h2>Did routing pay for itself?</h2>
-        <span class="ct" id="v-savings-pct">${D.savings?.today?.savingsPercent > 0 ? Math.round(D.savings.today.savingsPercent) + '% saved' : 'no savings yet'}</span>
+        <h2>Model mix vs. all-opus counterfactual</h2>
+        <span class="ct" id="v-savings-pct">${D.savings?.today?.savingsPercent > 0 ? Math.round(D.savings.today.savingsPercent) + '% cheaper than all-opus' : 'no gap yet'}</span>
       </div>
       <div id="v-savings-body">${renderSavings(D.savings)}</div>
     </div>
@@ -750,21 +750,23 @@ function drillDay(date) {
 }
 
 function renderSavings(savings) {
-  if (!savings) return '<div class="empty">No savings data yet.</div>';
+  if (!savings) return '<div class="empty">No data yet.</div>';
   const t = savings.today || {};
   const daily = savings.daily || [];
 
-  // Cumulative savings
-  const cumSavings = daily.reduce((sum, d) => sum + (d.savings || 0), 0) + (t.savings || 0);
-  const todaySavings = t.savings || 0;
+  // Gap between actual spend and all-opus counterfactual.
+  // This reflects your model mix (haiku/sonnet/opus split) — not necessarily this tool's impact.
+  // Direct tool attribution lives in the "Cost since install" card (deduper savings).
+  const cumGap = daily.reduce((sum, d) => sum + (d.savings || 0), 0) + (t.savings || 0);
+  const todayGap = t.savings || 0;
 
   let html = `<div class="savings-hero">
     <div>
-      <div class="savings-big">$${cumSavings.toFixed(2)}</div>
-      <div class="savings-sub">total saved vs all-opus</div>
+      <div class="savings-big">$${cumGap.toFixed(2)}</div>
+      <div class="savings-sub">gap vs all-opus &mdash; reflects your model mix, not directly attributed to this tool</div>
     </div>
     <div>
-      <div class="savings-sub"><strong>$${todaySavings.toFixed(2)}</strong> saved today</div>
+      <div class="savings-sub"><strong>$${todayGap.toFixed(2)}</strong> gap today</div>
       <div class="savings-sub"><strong>$${(t.actual || 0).toFixed(2)}</strong> actual &middot; <strong>$${(t.counterfactual || 0).toFixed(2)}</strong> if all opus</div>
     </div>
   </div>`;
@@ -821,7 +823,7 @@ function renderSavings(savings) {
   html += `<div class="savings-legend">
     <span class="leg-actual">actual spend</span>
     <span class="leg-counter">if all opus</span>
-    <span class="leg-saved">savings</span>
+    <span class="leg-saved">gap (model mix)</span>
   </div>`;
 
   return html;
