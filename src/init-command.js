@@ -483,6 +483,26 @@ function parsePort(args) {
   return null;
 }
 
+function installStatusline(repoDir, settings) {
+  const dest = path.join(CLAUDE_DIR, 'statusline-command.sh');
+  const src = path.join(repoDir, 'statusline-command.sh');
+  try {
+    fs.copyFileSync(src, dest);
+    fs.chmodSync(dest, 0o755);
+    if (!settings.statusLine) {
+      settings.statusLine = { type: 'command', command: `bash ${dest}` };
+      ok(`Statusline installed: ${dest}`);
+      info('Shows session %, weekly %, and context window in your terminal.');
+    } else {
+      ok(`Statusline script copied to ${dest}`);
+      info('Your settings.json already has a statusLine — update it manually if needed:');
+      info(`  "statusLine": { "type": "command", "command": "bash ${dest}" }`);
+    }
+  } catch (e) {
+    warn(`Could not install statusline: ${e.message}`);
+  }
+}
+
 function printInit(args = []) {
   const repoDir = path.resolve(path.join(__dirname, '..'));
   const isDiagnose = args.includes('--doctor') || args.includes('doctor');
@@ -538,10 +558,16 @@ function printInit(args = []) {
     ok(`All ${HOOK_EVENTS.length} hooks already installed`);
   }
 
-  // Step 5: PM2 dashboard
+  // Step 5: Install statusline (if --statusline flag passed or settings has no statusLine)
+  if (args.includes('--statusline')) {
+    installStatusline(repoDir, settings);
+    writeSettings(settings);
+  }
+
+  // Step 6 (was 5): PM2 dashboard
   setupPm2(repoDir);
 
-  // Step 6: npm link (makes `claude-tokens` and `token-coach` available globally)
+  // Step 7: npm link (makes `claude-tokens` and `token-coach` available globally)
   try {
     execSync('npm link 2>/dev/null', { cwd: repoDir, encoding: 'utf-8', stdio: 'pipe' });
     ok('Global commands installed (claude-tokens, token-coach)');
@@ -549,13 +575,13 @@ function printInit(args = []) {
     info('Could not run npm link -- run with sudo or use: node bin/cli.js <command>');
   }
 
-  // Step 7: Validate router
+  // Step 8: Validate router
   console.log('');
   const c = classifyTask('search for all files containing TODO');
   const r = recommendModel(c);
   ok(`Router test: "search for TODOs" -> ${r.model} (${c.family}/${c.complexity})`);
 
-  // Step 8: End-to-end hook verification — actually fire the hook and check output
+  // Step 9: End-to-end hook verification — actually fire the hook and check output
   verifyHookWorks(repoDir);
 
   const port = getPort();
