@@ -50,6 +50,26 @@ No `npm install` needed. Zero dependencies. Seriously — zero.
 
 **Then restart Claude Code** (exit completely and relaunch). Hooks do not take effect until you restart.
 
+### Optional: terminal statusline
+
+Add `--statusline` to show your session and weekly rate limits directly in the Claude Code terminal:
+
+```bash
+node bin/cli.js init --statusline
+```
+
+This installs `statusline-command.sh` to `~/.claude/` and wires it into your settings. After restarting Claude Code you'll see:
+
+```
+user@host project  |  Sonnet 4.6  |  ctx [███░░░░░░░] 38%  |  sess 46% (resets 1h13m)  |  wk 31% (resets 5d2h)
+```
+
+- **ctx** — context window fill (how full your 200K window is)
+- **sess** — 5-hour rolling session rate limit with reset countdown
+- **wk** — weekly rate limit with days until reset
+
+Rate limit percentages are the same numbers shown in the Claude app's Plan usage screen — pulled directly from Anthropic's data in the statusline JSON.
+
 ---
 
 ## Update
