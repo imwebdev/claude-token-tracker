@@ -242,13 +242,14 @@ node bin/cli.js dashboard    # Start the web dashboard (uses configured port, de
 
 ```bash
 node bin/cli.js config                          # View all settings
-node bin/cli.js config routing_preference 20    # Set cost preference (0-100)
 node bin/cli.js config daily_alert 5            # Warn when daily spend hits $5
 node bin/cli.js config daily_cap 20             # Alert when daily spend hits $20
 node bin/cli.js config dashboard_port 8080      # Change dashboard port
 node bin/cli.js config read_dedupe false        # Disable PreToolUse Read blocking
 node bin/cli.js config session_start_map false  # Disable SessionStart project-map injection
 ```
+
+Routing is controlled by the matrix on the dashboard. Pick a preset (Balanced / Coder / Reader / Budget / Max accuracy) or edit individual cells. The old `default_model` and `force_model` keys are deprecated — `force_model` auto-migrates into the matrix on first load.
 
 **Task execution (advanced)**
 
@@ -267,20 +268,19 @@ When executing, Token Tracker snapshots files before and after, spawns `claude -
 
 ---
 
-### Routing preference
+### Routing presets
 
-Control the cost vs. quality tradeoff with a number from 0 to 100:
+The dashboard's "Routing matrix" card is the primary routing control. Pick a named preset, then tweak individual cells if you want surgical adjustments.
 
-```bash
-node bin/cli.js config routing_preference 35
-```
+| Preset | Behavior |
+|---|---|
+| **Balanced** (default) | Safe defaults — haiku for simple reads, sonnet for most edits, opus for architecture and high-complexity multi-file work |
+| **Coder** | Opus-heavy on code_edit / multi_file / debug / architecture; haiku only for simple searches |
+| **Reader** | Haiku-heavy on search / review / question / command; opus reserved for architecture |
+| **Budget** | Haiku everywhere possible; sonnet for debug/architecture mid-tier; opus only for architecture/high |
+| **Max accuracy** | Opus for every cell — equivalent to the old `force_model=opus` |
 
-| Range | Mode | Behavior |
-|-------|------|----------|
-| 0-25 | Max savings | Aggressively uses haiku and sonnet. Opus only for architecture. |
-| 26-50 | Cost-conscious (default: 35) | Sonnet-heavy. Opus for architecture and multi-file only. |
-| 51-75 | Balanced | Opus for complex debug, review, and planning tasks. |
-| 76-100 | Max quality | Opus for anything medium complexity or higher. |
+You can also hover any cell in the grid to see your own historical success rate for that family × model (from the adaptive learner).
 
 ---
 

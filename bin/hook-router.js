@@ -176,7 +176,6 @@ function handleUserPromptSubmit(input) {
     classification,
     recommended_model: recommendation.model,
     base_model: recommendation.baseModel,
-    default_model: recommendation.default_model,
     recommended_reason: recommendation.reasons.join('; '),
     actual_model: null,
     was_delegated: null,
@@ -243,9 +242,6 @@ function handleUserPromptSubmit(input) {
     warnings.push(`${warnColor}! Long prompt (${prompt.length} chars) classified as unknown -- vague prompts waste tokens. Be specific: file paths, line numbers, exact changes.${reset}`);
   }
 
-  // Override detection — force_model bypasses routing
-  const isOverride = recommendation.reasons.some(r => r.startsWith('[override]'));
-
   // Learning signal detection — three variants with different urgency
   const learnChanged  = recommendation.reasons.filter(r => r.startsWith('[learned]') && !r.startsWith('[learned:'));
   const learnTip      = recommendation.reasons.filter(r => r.startsWith('[learned:tip]'));
@@ -269,16 +265,11 @@ function handleUserPromptSubmit(input) {
     learnLine = `  ${learnConfirmColor}✓ learned:${reset} ${muted}${text}${reset}`;
   }
 
-  const overrideLine = isOverride
-    ? `  ${alertColor}\x1b[1m⚠ OVERRIDE ACTIVE${reset}${alertColor} — force_model=${recommendation.model}, routing bypassed${reset}`
-    : null;
-
   const lines = [
     `${gray}- - - - - - - - - - - - - - - - - - - -${reset}`,
     `${amber}${bold}TOKEN COACH${reset}  ${gray}${classification.family} (${classification.complexity}, ${confidence} conf)${reset}`,
-    `  ${gray}model:${reset}   ${color}${recommendation.model}${reset}  ${muted}${recommendation.reasons.filter(r => !r.startsWith('[learned') && !r.startsWith('[override]')).join('; ')}${reset}`,
+    `  ${gray}model:${reset}   ${color}${recommendation.model}${reset}  ${muted}${recommendation.reasons.filter(r => !r.startsWith('[learned')).join('; ')}${reset}`,
     `  ${gray}action:${reset}  ${color}${action}${reset}`,
-    ...(overrideLine ? [overrideLine] : []),
     ...(learnLine ? [learnLine] : []),
     `  ${gray}session:${reset} ${costColor}${costStr}${reset} ${gray}(${promptCount} prompts)${reset}`,
     ...warnings,
@@ -301,12 +292,10 @@ function handleUserPromptSubmit(input) {
     ? ` [Learning: confirmed] ${learnConfirm.map(r => r.replace('[learned:confirm] ', '')).join('; ')}.`
     : '';
 
-  const overrideNote = isOverride ? ` OVERRIDE ACTIVE: force_model=${recommendation.model} set in config — routing bypassed.` : '';
-
   const ctx = [
     `[claude-token-tracker] Task classified: ${classification.family} (${classification.complexity} complexity, ${confidence} confidence).`,
     `Recommended model: ${recommendation.model.toUpperCase()}.`,
-    `Reason: ${recommendation.reasons.filter(r => !r.startsWith('[learned') && !r.startsWith('[override]')).join('; ') || 'routing bypassed by force_model'}.${learnNote}${overrideNote}`,
+    `Reason: ${recommendation.reasons.filter(r => !r.startsWith('[learned')).join('; ') || 'routing baseline'}.${learnNote}`,
     `Session: ${costStr} (${promptCount} prompts).${warningLines}`,
   ];
 

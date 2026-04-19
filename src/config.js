@@ -12,9 +12,8 @@ const FAMILIES = [
 ];
 const COMPLEXITIES = ['low', 'medium', 'high'];
 
-// Hardcoded safe defaults for the routing matrix (#95). Used when the user has no
-// per-cell preference and learner data is insufficient to suggest one. Roughly
-// mirrors what the classifier+escalation path would pick today.
+// Safe defaults for the routing matrix. Used when the user hasn't customized it.
+// Roughly mirrors what the classifier+escalation path would have picked.
 const DEFAULT_MATRIX = {
   search_read:  { low: 'haiku',  medium: 'haiku',  high: 'sonnet' },
   code_edit:    { low: 'sonnet', medium: 'sonnet', high: 'opus'   },
@@ -28,14 +27,55 @@ const DEFAULT_MATRIX = {
   unknown:      { low: 'sonnet', medium: 'sonnet', high: 'opus'   },
 };
 
-const DEFAULTS = {
-  // Default model: where routing starts. Tasks go up or down from here based on complexity.
-  // 'haiku'  — start on haiku, upgrade for complex tasks (max savings)
-  // 'sonnet' — start on sonnet, haiku for simple tasks, opus for complex (default)
-  // 'opus'   — everything runs on opus, no downgrading
-  default_model: 'sonnet',
+// Named presets for the matrix (#97). Dashboard exposes these as a dropdown so
+// new users get a one-click on-ramp instead of 30 blank cells.
+const PRESETS = {
+  Balanced: DEFAULT_MATRIX,
+  Coder: {
+    search_read:  { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+    code_edit:    { low: 'sonnet', medium: 'opus',   high: 'opus'   },
+    multi_file:   { low: 'opus',   medium: 'opus',   high: 'opus'   },
+    debug:        { low: 'opus',   medium: 'opus',   high: 'opus'   },
+    review:       { low: 'sonnet', medium: 'sonnet', high: 'opus'   },
+    plan:         { low: 'sonnet', medium: 'opus',   high: 'opus'   },
+    architecture: { low: 'opus',   medium: 'opus',   high: 'opus'   },
+    command:      { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+    question:     { low: 'sonnet', medium: 'sonnet', high: 'opus'   },
+    unknown:      { low: 'sonnet', medium: 'opus',   high: 'opus'   },
+  },
+  Reader: {
+    search_read:  { low: 'haiku',  medium: 'haiku',  high: 'haiku'  },
+    code_edit:    { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+    multi_file:   { low: 'sonnet', medium: 'sonnet', high: 'opus'   },
+    debug:        { low: 'sonnet', medium: 'sonnet', high: 'opus'   },
+    review:       { low: 'haiku',  medium: 'haiku',  high: 'sonnet' },
+    plan:         { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+    architecture: { low: 'sonnet', medium: 'opus',   high: 'opus'   },
+    command:      { low: 'haiku',  medium: 'haiku',  high: 'sonnet' },
+    question:     { low: 'haiku',  medium: 'haiku',  high: 'sonnet' },
+    unknown:      { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+  },
+  Budget: {
+    search_read:  { low: 'haiku',  medium: 'haiku',  high: 'haiku'  },
+    code_edit:    { low: 'haiku',  medium: 'haiku',  high: 'sonnet' },
+    multi_file:   { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+    debug:        { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+    review:       { low: 'haiku',  medium: 'haiku',  high: 'haiku'  },
+    plan:         { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+    architecture: { low: 'sonnet', medium: 'sonnet', high: 'opus'   },
+    command:      { low: 'haiku',  medium: 'haiku',  high: 'sonnet' },
+    question:     { low: 'haiku',  medium: 'haiku',  high: 'haiku'  },
+    unknown:      { low: 'haiku',  medium: 'sonnet', high: 'sonnet' },
+  },
+  'Max accuracy': (() => {
+    const m = {};
+    for (const f of FAMILIES) m[f] = { low: 'opus', medium: 'opus', high: 'opus' };
+    return m;
+  })(),
+};
 
-  // Legacy — kept for backward compat; ignored when default_model is set explicitly.
+const DEFAULTS = {
+  // Legacy — ignored; kept so old configs don't error.
   routing_preference: 35,
 
   // Daily budget alerts (USD). null = disabled.
@@ -44,10 +84,6 @@ const DEFAULTS = {
 
   // Dashboard port. null = use default 6099.
   dashboard_port: null,
-
-  // DEPRECATED (#95) — migrated into routing_matrix on first load. Still read as
-  // a shim for existing configs; remove after 1–2 releases.
-  force_model: null,
 
   // Routing matrix: per-(family × complexity) model choice. When a cell is set,
   // the hook applies it instead of the classifier's recommendation. The dashboard
@@ -85,21 +121,10 @@ function configPath() {
   return dataHome.getConfigPath();
 }
 
-/** Migrate legacy keys to current schema. */
+/** Drop deprecated keys, migrate force_model into the matrix if needed (#97). */
 function migrate(user) {
-  // model_floor → default_model (renamed for clarity)
-  if (!user.default_model && user.model_floor) {
-    user.default_model = user.model_floor;
-  }
-  // routing_preference → default_model (oldest compat)
-  if (!user.default_model && user.routing_preference != null) {
-    const pref = user.routing_preference;
-    if (pref <= 25) user.default_model = 'haiku';
-    else if (pref <= 75) user.default_model = 'sonnet';
-    else user.default_model = 'opus';
-  }
-  // force_model → routing_matrix (#95): seed every cell to the forced model,
-  // then clear force_model so it doesn't fight the matrix on subsequent reads.
+  // force_model → routing_matrix: seed every cell to the forced model, record a
+  // one-shot migration marker so the UI can explain what happened, then drop.
   if (user.force_model && !user.routing_matrix) {
     const m = {};
     for (const f of FAMILIES) {
@@ -107,9 +132,10 @@ function migrate(user) {
     }
     user.routing_matrix = m;
     user._force_model_migrated = user.force_model;
-    user.force_model = null;
   }
-  // Strip legacy keys so they don't appear in the runtime config
+  // Silently drop deprecated keys — they no longer control routing.
+  delete user.force_model;
+  delete user.default_model;
   delete user.model_floor;
   return user;
 }
@@ -178,7 +204,7 @@ function clearCache() {
 }
 
 module.exports = {
-  DEFAULTS, FAMILIES, COMPLEXITIES, DEFAULT_MATRIX,
+  DEFAULTS, FAMILIES, COMPLEXITIES, DEFAULT_MATRIX, PRESETS,
   read, set, clearCache, configPath,
   getMatrixCell, updateMatrix,
 };

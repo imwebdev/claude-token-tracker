@@ -13,9 +13,8 @@ function generateInsights(data) {
 
   // ─── Primary model mismatch check ─────────────────────────
   try {
-    const config = require('./config');
     const parser = require('./parser');
-    const floor = config.read().default_model || 'sonnet';
+    const floor = 'sonnet';
     const tu = parser.readSessionTokenUsage();
     const bm = tu?.byModel || {};
     const opusCalls = bm.opus?.calls || 0;

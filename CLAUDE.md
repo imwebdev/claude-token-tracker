@@ -17,7 +17,7 @@ node bin/cli.js uninstall         # Remove hooks, stop dashboard, clean up
 
 # Config
 node bin/cli.js config                          # View all
-node bin/cli.js config routing_preference 35    # Cost preference 0-100
+node bin/cli.js dashboard                        # Edit routing matrix (primary routing control)
 node bin/cli.js config daily_alert 5            # Budget alert threshold
 node bin/cli.js config daily_cap 20             # Budget cap
 

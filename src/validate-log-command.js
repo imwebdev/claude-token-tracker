@@ -84,7 +84,7 @@ function runValidateLog(args = []) {
     if (!groundTruth) continue; // skip rows with unrecognized model fields
 
     const classification = router.classifyTask(rec.description);
-    const recommendation = router.recommendModel(classification, floorOverride ? { default_model: floorOverride } : {});
+    const recommendation = router.recommendModel(classification);
     const predicted = recommendation.model;
 
     if (classification.confidence < minConfidence) continue;
@@ -165,10 +165,7 @@ function runValidateLog(args = []) {
   console.log('');
   console.log(`${bold}Token Coach — Validate Log${reset}`);
   console.log(`${gray}${'─'.repeat(44)}${reset}`);
-  const config = require('./config');
-  const activeFloor = floorOverride || config.read().default_model || 'sonnet';
   console.log(`  ${gray}Records:${reset}  ${total}`);
-  console.log(`  ${gray}Floor:${reset}    ${activeFloor}${floorOverride ? '' : ' (from config — use --floor opus to match historical usage)'}`);
   console.log(`  ${gray}Matched:${reset}  ${green}${matched} (${accuracy}%)${reset}`);
   console.log(`  ${gray}Mismatch:${reset} ${red}${mismatched} (${100 - accuracy}%)${reset}`);
   console.log(`  ${gray}Accuracy:${reset} ${accColor}${bold}${accuracy}%${reset}`);
