@@ -522,6 +522,61 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  if (req.url === '/api/matrix' && req.method === 'GET') {
+    const cfg = config.read();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      matrix: cfg.routing_matrix || config.DEFAULT_MATRIX,
+      defaults: config.DEFAULT_MATRIX,
+      families: config.FAMILIES,
+      complexities: config.COMPLEXITIES,
+      isUsingDefaults: !cfg.routing_matrix,
+      learnerStats: getLearningStats().adjustments,
+      migratedFromForceModel: cfg._force_model_migrated || null,
+    }));
+    return;
+  }
+
+  if (req.url === '/api/matrix' && (req.method === 'PUT' || req.method === 'POST')) {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { matrix } = JSON.parse(body);
+        if (!matrix || typeof matrix !== 'object') throw new Error('matrix object required');
+        const validModels = new Set(['haiku', 'sonnet', 'opus']);
+        for (const family of Object.keys(matrix)) {
+          if (!config.FAMILIES.includes(family)) throw new Error(`unknown family: ${family}`);
+          for (const cx of Object.keys(matrix[family] || {})) {
+            if (!config.COMPLEXITIES.includes(cx)) throw new Error(`unknown complexity: ${cx}`);
+            if (!validModels.has(matrix[family][cx])) throw new Error(`invalid model: ${matrix[family][cx]}`);
+          }
+        }
+        const next = config.updateMatrix(matrix);
+        config.clearCache();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ matrix: next }));
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.url === '/api/matrix/suggest' && req.method === 'GET') {
+    try {
+      const { suggestMatrix } = require('./learner');
+      const suggested = suggestMatrix(config.DEFAULT_MATRIX);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ matrix: suggested }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
   if (req.url === '/api/hooks/status' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ enabled: getHooksStatus() }));

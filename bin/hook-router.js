@@ -154,6 +154,21 @@ function handleUserPromptSubmit(input) {
   const classification = router.classifyTask(prompt);
   const recommendation = router.recommendModel(classification);
 
+  // ── Matrix override (#95) ──────────────────────────────────────────
+  // Dashboard-configured routing matrix trumps the classifier output. If the
+  // user has set a specific (family, complexity) cell, apply it and tag the
+  // reason so the UI shows why the recommendation differs from the classifier.
+  try {
+    const configMod = require(path.join(ROOT, 'src', 'config'));
+    const matrixModel = configMod.getMatrixCell(classification.family, classification.complexity);
+    if (matrixModel && matrixModel !== recommendation.model) {
+      recommendation.classifierModel = recommendation.model;
+      recommendation.model = matrixModel;
+      recommendation.reasons = recommendation.reasons || [];
+      recommendation.reasons.unshift(`[matrix] dashboard rule: ${classification.family}/${classification.complexity} → ${matrixModel}`);
+    }
+  } catch (_) { /* matrix is best-effort; classifier output still works */ }
+
   events.logEvent('routing_decision', {
     session_id: input.session_id,
     project: getProject(input),
