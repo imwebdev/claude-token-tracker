@@ -454,59 +454,24 @@ function upgrade(model) {
 const OPUS_FLOOR = new Set([TASK_FAMILIES.ARCHITECTURE]);
 
 /**
- * Recommend the optimal model tier based on classification and model floor.
+ * Recommend a model for a classified task.
  *
- * Default model behaviour (routing starts here, goes up or down based on complexity):
- *   'haiku'  — start on haiku, upgrade when the task genuinely needs more
- *   'sonnet' — start on sonnet (default), haiku for simple tasks, opus for complex
- *   'opus'   — everything runs on opus, no downgrading
+ * Baseline comes from user-defined capabilities (models.json) or the heuristic
+ * in getBaseRecommendation(family, complexity). Custom rules, A/B experiments,
+ * and the adaptive learner can nudge the baseline. The routing matrix applies
+ * one level up in bin/hook-router.js — this function returns the classifier's
+ * best guess, which the matrix may override.
  *
  * @param {object} classification -- from classifyTask()
- * @param {object} opts -- { default_model?: string, model_floor?: string (legacy), preference?: number (legacy) }
  */
-function recommendModel(classification, opts = {}) {
+function recommendModel(classification) {
   const { family, complexity, customModel } = classification || {};
 
-  // Resolve default model from opts or config
-  let floor = opts.default_model || opts.model_floor; // accept both; model_floor is legacy
-  let preference = opts.preference; // legacy compat
-  if (!floor) {
-    try {
-      const config = require('./config');
-      const cfg = config.read();
-      floor = cfg.default_model || cfg.model_floor;
-      if (preference == null) preference = cfg.routing_preference;
-    } catch {}
-  }
-  if (!MODEL_ORDER.includes(floor)) floor = 'sonnet';
-  if (preference == null) preference = 35;
-
-  // Check for user-level force_model override — bypasses all routing logic
-  let forceModel = opts.force_model;
-  if (!forceModel) {
-    try {
-      const config = require('./config');
-      forceModel = config.read().force_model;
-    } catch {}
-  }
-  if (forceModel && MODEL_ORDER.includes(forceModel)) {
-    return {
-      model: forceModel,
-      baseModel: forceModel,
-      default_model: floor,
-      fallbackChain: forceModel === 'haiku' ? ['haiku', 'sonnet', 'opus']
-        : forceModel === 'sonnet' ? ['sonnet', 'opus']
-        : ['opus'],
-      reasons: [`[override] force_model=${forceModel} -- routing bypassed`],
-      costMultiplier: forceModel === 'haiku' ? 1 : forceModel === 'sonnet' ? 3 : 15,
-    };
-  }
-
-  // If a custom rule supplied an explicit model override, honour it directly
+  // Custom rule override — always honored.
   if (customModel && MODEL_ORDER.includes(customModel)) {
     return {
       model: customModel,
-      default_model: floor,
+      baseModel: customModel,
       fallbackChain: customModel === 'haiku' ? ['haiku', 'sonnet', 'opus']
         : customModel === 'sonnet' ? ['sonnet', 'opus']
         : ['opus'],
@@ -515,97 +480,42 @@ function recommendModel(classification, opts = {}) {
     };
   }
 
-  // ── Smart model selection: use user-defined capabilities if models.json exists ──
+  // Baseline — user-defined capabilities first, heuristic fallback.
   let base;
   try {
     const { selectByCapability } = require('./models');
     const smart = selectByCapability(family, complexity);
-    if (smart) {
-      base = { model: smart.model, reason: smart.reason };
-    }
+    if (smart) base = { model: smart.model, reason: smart.reason };
   } catch {}
   if (!base) base = getBaseRecommendation(family, complexity);
 
   let model = base.model;
   const reasons = [base.reason];
 
-  // ── A/B experiment override ──
+  // A/B experiment override — if active, returns immediately.
   try {
     const { getActiveExperiment, assignModel } = require('./experiments');
     const exp = getActiveExperiment(family);
     if (exp) {
       const experimentModel = assignModel(exp);
       if (experimentModel) {
-        model = experimentModel;
         reasons.push(`[experiment] ${exp.id} (${exp.family}) -- assigned ${experimentModel} (${exp.count + 1}/${exp.target})`);
         return {
-          model,
-          default_model: floor,
-          fallbackChain: model === 'haiku' ? ['haiku', 'sonnet', 'opus']
-            : model === 'sonnet' ? ['sonnet', 'opus']
+          model: experimentModel,
+          fallbackChain: experimentModel === 'haiku' ? ['haiku', 'sonnet', 'opus']
+            : experimentModel === 'sonnet' ? ['sonnet', 'opus']
             : ['opus'],
           reasons,
-          costMultiplier: model === 'haiku' ? 1 : model === 'sonnet' ? 3 : 15,
+          costMultiplier: experimentModel === 'haiku' ? 1 : experimentModel === 'sonnet' ? 3 : 15,
           experiment: { id: exp.id, family: exp.family },
         };
       }
     }
   } catch {}
 
-  // ── Apply model floor ──
-  const floorIdx = MODEL_ORDER.indexOf(floor);
-  const modelIdx = MODEL_ORDER.indexOf(model);
-
-  if (floor === 'opus') {
-    // Opus-first: everything runs on opus, no routing
-    if (model !== 'opus') {
-      reasons.push(`floor=opus -- upgraded from ${model}`);
-      model = 'opus';
-    }
-  } else if (floor === 'haiku') {
-    // Haiku-first: start on haiku, only upgrade when task genuinely needs more
-    if (!OPUS_FLOOR.has(family)) {
-      if (model === 'opus' && complexity !== 'high') {
-        model = 'sonnet';
-        reasons.push('floor=haiku -- downgraded opus to sonnet (not high complexity)');
-      }
-      if (model === 'opus' && complexity === 'high' && family === TASK_FAMILIES.DEBUG) {
-        model = 'sonnet';
-        reasons.push('floor=haiku -- trying sonnet for debug first');
-      }
-      if (model === 'sonnet' && complexity === 'low') {
-        model = 'haiku';
-        reasons.push('floor=haiku -- downgraded to haiku (low complexity)');
-      }
-      // Unknown family: we have no reason to pay for sonnet when we can't classify the task
-      if (model === 'sonnet' && family === TASK_FAMILIES.UNKNOWN) {
-        model = 'haiku';
-        reasons.push('floor=haiku -- unclassified task, defaulting to haiku');
-      }
-      // Medium sonnet tasks that are code edits/reviews/plans stay on sonnet — they need it
-      // Everything else at medium goes to haiku
-      const keepSonnet = new Set([TASK_FAMILIES.CODE_EDIT, TASK_FAMILIES.REVIEW, TASK_FAMILIES.PLAN, TASK_FAMILIES.MULTI_FILE, TASK_FAMILIES.DEBUG]);
-      if (model === 'sonnet' && complexity === 'medium' && !keepSonnet.has(family)) {
-        model = 'haiku';
-        reasons.push(`floor=haiku -- ${family} at medium complexity, haiku sufficient`);
-      }
-    }
-  } else {
-    // Sonnet-first (default): downgrade opus for non-high-complexity
-    if (!OPUS_FLOOR.has(family)) {
-      if (model === 'opus' && complexity !== 'high') {
-        model = 'sonnet';
-        reasons.push(`floor=sonnet -- sonnet sufficient for ${complexity} ${family}`);
-      }
-      if (model === 'opus' && complexity === 'high' && family === TASK_FAMILIES.DEBUG) {
-        model = 'sonnet';
-        reasons.push('floor=sonnet -- trying sonnet for debug first');
-      }
-    }
-  }
-
-  // ── Adaptive learning: adjust based on historical success rates ──
-  if (!OPUS_FLOOR.has(family) && floor !== 'opus') {
+  // Adaptive learning nudge — upgrade if historical data shows the baseline underperforms;
+  // surface downgrade opportunities as tips (matrix decides the actual downgrade).
+  if (!OPUS_FLOOR.has(family)) {
     try {
       const { getAdjustment } = require('./learner');
       const adj = getAdjustment(family, model);
@@ -614,15 +524,7 @@ function recommendModel(classification, opts = {}) {
           model = adj.upgradeTo;
           reasons.push(`[learned] ${adj.reason}`);
         } else if (adj.suggestion === 'downgrade' && adj.downgradeTo) {
-          const downgradeIdx = MODEL_ORDER.indexOf(adj.downgradeTo);
-          if (downgradeIdx >= floorIdx) {
-            // Downgrade is within the allowed floor — apply it
-            model = adj.downgradeTo;
-            reasons.push(`[learned] ${adj.reason}`);
-          } else {
-            // Downgrade blocked by model floor — surface as a tip so user can see the insight
-            reasons.push(`[learned:tip] ${adj.reason} (floor=${floor} prevents downgrade to ${adj.downgradeTo})`);
-          }
+          reasons.push(`[learned:tip] ${adj.reason}`);
         } else if (adj.suggestion === 'confirm') {
           reasons.push(`[learned:confirm] ${adj.reason}`);
         }
@@ -633,7 +535,6 @@ function recommendModel(classification, opts = {}) {
   return {
     model,
     baseModel: base.model,
-    default_model: floor,
     fallbackChain: model === 'haiku' ? ['haiku', 'sonnet', 'opus']
       : model === 'sonnet' ? ['sonnet', 'opus']
       : ['opus'],

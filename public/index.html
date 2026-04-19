@@ -515,21 +515,17 @@ function renderMatrix(state) {
     </table>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <button id="matrix-save" class="btn" style="padding:6px 14px;background:var(--fg);color:var(--bg);border:none;border-radius:4px;font-size:12px;cursor:pointer">Save matrix</button>
-      <button id="matrix-reset" class="btn" style="padding:6px 14px;background:transparent;color:var(--fg);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer">Reset to suggested (from learner data)</button>
-      <span style="font-size:11px;color:var(--dim);margin-left:4px">Set all to:</span>
-      <select id="matrix-set-all" style="font-family:var(--mono);font-size:11px;padding:4px 6px;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px">
-        <option value="">—</option>
-        <option value="haiku">haiku (equivalent to force_model=haiku)</option>
-        <option value="sonnet">sonnet</option>
-        <option value="opus">opus</option>
+      <span style="font-size:11px;color:var(--dim)">Preset:</span>
+      <select id="matrix-preset" style="font-family:var(--mono);font-size:11px;padding:4px 6px;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px">
+        <option value="">— choose —</option>
+        ${Object.keys(state.presets || {}).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('')}
       </select>
-      <span id="matrix-status" style="font-size:11px;color:var(--dim);margin-left:auto"></span>
+      <button id="matrix-reset" class="btn" style="padding:6px 12px;background:transparent;color:var(--fg);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer" title="Suggest cells based on your own learner success rates">Suggest from learner data</button>
+      <button id="matrix-save" class="btn" style="padding:6px 14px;background:var(--fg);color:var(--bg);border:none;border-radius:4px;font-size:12px;cursor:pointer;margin-left:auto">Save matrix</button>
+      <span id="matrix-status" style="font-size:11px;color:var(--dim);width:100%;text-align:right;margin-top:4px"></span>
     </div>
-    <div style="font-size:10px;color:var(--dim);margin-top:10px">
-      Hover any cell to see learner success rate.
-      Matrix overrides the classifier — it's the primary routing source.
-      <code>force_model</code> is deprecated; setting every cell to the same model achieves the same result.
+    <div style="font-size:10px;color:var(--dim);margin-top:10px;line-height:1.5">
+      <strong style="color:var(--fg)">Presets</strong> are one-click starting points — pick one, tweak individual cells, then Save. <strong style="color:var(--fg)">Balanced</strong> is the default. <strong style="color:var(--fg)">Coder</strong> leans opus on code/debug. <strong style="color:var(--fg)">Reader</strong> and <strong style="color:var(--fg)">Budget</strong> lean haiku. <strong style="color:var(--fg)">Max accuracy</strong> sets every cell to opus. Hover any cell to see your historical success rate for that family × model.
     </div>
   `;
 }
@@ -585,11 +581,17 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('change', (e) => {
-  if (e.target?.id === 'matrix-set-all' && e.target.value) {
-    const m = e.target.value;
-    for (const sel of document.querySelectorAll('.matrix-cell')) sel.value = m;
+  if (e.target?.id === 'matrix-preset' && e.target.value) {
+    const presetName = e.target.value;
+    const matrix = MATRIX_STATE?.presets?.[presetName];
+    if (!matrix) return;
+    for (const sel of document.querySelectorAll('.matrix-cell')) {
+      const f = sel.dataset.family;
+      const cx = sel.dataset.cx;
+      if (matrix[f]?.[cx]) sel.value = matrix[f][cx];
+    }
     e.target.value = '';
-    matrixStatus(`All cells set to ${m}. Click "Save matrix" to persist.`, 'var(--accent)');
+    matrixStatus(`Loaded preset: ${presetName}. Click "Save matrix" to persist.`, 'var(--accent)');
   }
 });
 
@@ -669,25 +671,10 @@ function buildHTML() {
 
     <div class="card anim d1" style="margin-bottom:12px">
       <div class="card-hd">
-        <h2>Default model</h2>
-        <span class="ct" id="v-floor-label">${D.config?.default_model || D.config?.model_floor || 'sonnet'}</span>
+        <h2>Settings</h2>
       </div>
-      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.5">Routing starts here and adjusts up or down based on task complexity. Simple tasks go lower, complex tasks go higher.</div>
-      <div class="floor-row" id="v-floor-row">
-        ${renderFloorSelector(D.config?.default_model || D.config?.model_floor || 'sonnet')}
-      </div>
-      <div id="v-floor-warning">${renderFloorWarning(D)}</div>
-      <div id="v-floor-error" style="display:none;font-size:12px;color:#c0392b;margin-top:8px;padding:6px 8px;background:rgba(192,57,43,0.08);border-radius:4px"></div>
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px">Force override</div>
-        <div style="font-size:11px;color:var(--dim);margin-bottom:8px;line-height:1.4">Lock a specific model regardless of TC's routing logic. Use when you want full control — e.g., force Opus while debugging.</div>
-        <div class="floor-row" id="v-override-row">
-          ${renderOverrideSelector(D.config?.force_model || null)}
-        </div>
-        <div id="v-override-warn" style="display:${D.config?.force_model ? '' : 'none'};margin-top:8px;font-size:11px;color:#e67e22;padding:5px 8px;background:rgba(230,126,34,0.1);border-radius:4px">⚠ Override active — TC routing is bypassed. All tasks will use <strong id="v-override-model">${D.config?.force_model || ''}</strong>.</div>
-        <div id="v-override-error" style="display:none;font-size:12px;color:#c0392b;margin-top:8px;padding:6px 8px;background:rgba(192,57,43,0.08);border-radius:4px"></div>
-      </div>
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--separator)">
+      <div style="font-size:12px;color:var(--dim);margin-bottom:10px;line-height:1.5">Routing is controlled by the <a href="#v-matrix-card" style="color:var(--accent)">Routing matrix</a> below. Pick a preset (Balanced / Coder / Reader / Budget / Max accuracy) to change how every task is routed.</div>
+      <div style="padding-top:12px;border-top:1px solid var(--separator)">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
           <div>
             <div style="font-size:13px;font-weight:500">History retention</div>
@@ -1044,78 +1031,6 @@ function renderCostSinceInstall(D) {
   </div>`;
 
   return html;
-}
-
-function renderFloorWarning(D) {
-  // Session model display removed — Claude Code's /config model selector doesn't reliably persist
-  return '';
-}
-
-function renderFloorSelector(current) {
-  const floors = [
-    { id: 'haiku', label: 'Haiku-first', desc: 'Start on haiku, only upgrade when needed' },
-    { id: 'sonnet', label: 'Sonnet-first', desc: 'Start on sonnet, upgrade to opus for complex work' },
-    { id: 'opus', label: 'Opus-first', desc: 'Everything runs on opus, no routing' },
-  ];
-  return floors.map(f =>
-    `<button class="floor-btn ${f.id === current ? 'on' : ''}" onclick="setFloor('${f.id}')" aria-pressed="${f.id === current}"><strong>${f.label}</strong><span>${f.desc}</span></button>`
-  ).join('');
-}
-
-function setFloor(floor) {
-  const errEl = document.getElementById('v-floor-error');
-  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-  fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ default_model: floor }),
-  }).then(r => {
-    if (!r.ok) throw new Error('Server error ' + r.status);
-    return r.json();
-  }).then(cfg => {
-    if (DATA) DATA.config = cfg;
-    const row = document.getElementById('v-floor-row');
-    if (row) row.innerHTML = renderFloorSelector(floor);
-    const label = document.getElementById('v-floor-label');
-    if (label) label.textContent = floor;
-  }).catch(err => {
-    if (errEl) { errEl.textContent = 'Failed to save: ' + err.message; errEl.style.display = ''; }
-  });
-}
-
-function renderOverrideSelector(current) {
-  const opts = [
-    { id: null, label: 'Off', desc: 'TC routes normally' },
-    { id: 'haiku', label: 'Force Haiku', desc: 'Lock to haiku for every task' },
-    { id: 'sonnet', label: 'Force Sonnet', desc: 'Lock to sonnet for every task' },
-    { id: 'opus', label: 'Force Opus', desc: 'Lock to opus — routing bypassed' },
-  ];
-  return opts.map(o =>
-    `<button class="floor-btn ${o.id === current ? 'on' : ''}" onclick="setOverride(${o.id === null ? 'null' : "'" + o.id + "'"})" aria-pressed="${o.id === current}"><strong>${o.label}</strong><span>${o.desc}</span></button>`
-  ).join('');
-}
-
-function setOverride(model) {
-  const errEl = document.getElementById('v-override-error');
-  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-  fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ force_model: model }),
-  }).then(r => {
-    if (!r.ok) throw new Error('Server error ' + r.status);
-    return r.json();
-  }).then(cfg => {
-    if (DATA) DATA.config = cfg;
-    const row = document.getElementById('v-override-row');
-    if (row) row.innerHTML = renderOverrideSelector(model);
-    const warn = document.getElementById('v-override-warn');
-    if (warn) { warn.style.display = model ? '' : 'none'; }
-    const modelSpan = document.getElementById('v-override-model');
-    if (modelSpan) modelSpan.textContent = model || '';
-  }).catch(err => {
-    if (errEl) { errEl.textContent = 'Failed to save: ' + err.message; errEl.style.display = ''; }
-  });
 }
 
 function saveHistoryDays(val) {

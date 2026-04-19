@@ -522,14 +522,12 @@ function printInit(args = []) {
   }
 
   // Step 3: Write default config if none exists
-  const cfg = config.read();
   if (!fs.existsSync(config.configPath())) {
-    config.set('routing_preference', cfg.routing_preference);
+    config.set('history_days', config.DEFAULTS.history_days);
     ok(`Config created: ${config.configPath()}`);
-    info(`Routing preference: ${cfg.routing_preference}/100 (sonnet-heavy -- saves money)`);
+    info('Routing: matrix defaults (Balanced preset) — edit at the dashboard to customize.');
   } else {
     ok(`Config exists: ${config.configPath()}`);
-    info(`Routing preference: ${cfg.routing_preference}/100`);
   }
 
   if (portArg) {

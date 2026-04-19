@@ -503,11 +503,11 @@ const server = http.createServer((req, res) => {
       req.on('end', () => {
         try {
           const updates = JSON.parse(body);
-          // Only allow known config keys
+          // Only allow known config keys. Deprecated keys (default_model, force_model)
+          // are intentionally absent from DEFAULTS since #97, so they'll never match.
           const allowed = new Set(Object.keys(config.DEFAULTS));
           for (const [k, v] of Object.entries(updates)) {
             if (!allowed.has(k)) continue;
-            if (k === 'default_model' && !['haiku', 'sonnet', 'opus'].includes(v)) continue;
             config.set(k, v);
           }
           config.clearCache();
@@ -528,6 +528,7 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({
       matrix: cfg.routing_matrix || config.DEFAULT_MATRIX,
       defaults: config.DEFAULT_MATRIX,
+      presets: config.PRESETS,
       families: config.FAMILIES,
       complexities: config.COMPLEXITIES,
       isUsingDefaults: !cfg.routing_matrix,

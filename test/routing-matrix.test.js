@@ -96,11 +96,11 @@ test('updateMatrix merges partial updates without blanking other cells', () => {
 // force_model migration
 // ─────────────────────────────────────────────────────────────
 
-test('force_model seeds every cell on first migrate', () => {
+test('force_model seeds every cell and is dropped from config', () => {
   resetConfig({ force_model: 'haiku' });
   const cfg = config.read();
-  assert.strictEqual(cfg.force_model, null, 'force_model should be cleared after migration');
-  assert.strictEqual(cfg._force_model_migrated, 'haiku', 'migration marker should record the forced value');
+  assert.strictEqual(cfg.force_model, undefined, 'force_model key is removed after migration');
+  assert.strictEqual(cfg._force_model_migrated, 'haiku', 'migration marker records the forced value');
   for (const f of config.FAMILIES) {
     for (const cx of config.COMPLEXITIES) {
       assert.strictEqual(config.getMatrixCell(f, cx), 'haiku', `${f}/${cx} should be seeded to haiku`);
@@ -114,8 +114,15 @@ test('force_model migration does not overwrite existing matrix', () => {
     routing_matrix: { code_edit: { low: 'haiku', medium: 'haiku', high: 'haiku' } },
   });
   const cfg = config.read();
-  assert.strictEqual(cfg.force_model, 'opus', 'force_model should NOT be touched when matrix already exists');
-  assert.strictEqual(config.getMatrixCell('code_edit', 'low'), 'haiku');
+  assert.strictEqual(cfg.force_model, undefined, 'force_model key is always removed after read');
+  assert.strictEqual(config.getMatrixCell('code_edit', 'low'), 'haiku', 'existing matrix wins');
+});
+
+test('deprecated keys (default_model, model_floor) are silently dropped', () => {
+  resetConfig({ default_model: 'haiku', model_floor: 'opus', routing_matrix: null });
+  const cfg = config.read();
+  assert.strictEqual(cfg.default_model, undefined);
+  assert.strictEqual(cfg.model_floor, undefined);
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -145,6 +152,40 @@ test('suggestMatrix skips families with insufficient samples', () => {
   seedOutcomes('plan', 'haiku', 5, 1.0);
   const m = suggestMatrix(config.DEFAULT_MATRIX);
   assert.strictEqual(m.plan.medium, config.DEFAULT_MATRIX.plan.medium);
+});
+
+// ─────────────────────────────────────────────────────────────
+// Presets (#97)
+// ─────────────────────────────────────────────────────────────
+
+test('PRESETS contains all five named presets', () => {
+  const names = Object.keys(config.PRESETS).sort();
+  assert.deepStrictEqual(names, ['Balanced', 'Budget', 'Coder', 'Max accuracy', 'Reader']);
+});
+
+test('each preset has every family × complexity cell populated', () => {
+  const validModels = new Set(['haiku', 'sonnet', 'opus']);
+  for (const [name, matrix] of Object.entries(config.PRESETS)) {
+    for (const f of config.FAMILIES) {
+      assert.ok(matrix[f], `preset "${name}" missing family ${f}`);
+      for (const cx of config.COMPLEXITIES) {
+        assert.ok(validModels.has(matrix[f][cx]), `preset "${name}" has invalid value at ${f}/${cx}: ${matrix[f][cx]}`);
+      }
+    }
+  }
+});
+
+test('Balanced preset equals DEFAULT_MATRIX', () => {
+  assert.deepStrictEqual(config.PRESETS.Balanced, config.DEFAULT_MATRIX);
+});
+
+test('Max accuracy preset is all opus', () => {
+  const matrix = config.PRESETS['Max accuracy'];
+  for (const f of config.FAMILIES) {
+    for (const cx of config.COMPLEXITIES) {
+      assert.strictEqual(matrix[f][cx], 'opus');
+    }
+  }
 });
 
 const passed = results.filter(r => r.ok).length;
