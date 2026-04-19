@@ -57,8 +57,42 @@ if (command === 'serve' || command === 'dashboard') {
   handleModels(args.slice(1));
 } else if (command === 'regenerate-map' || command === 'regen-map') {
   handleRegenerateMap();
+} else if (command === 'scan') {
+  handleScan();
 } else {
   printSummary();
+}
+
+function handleScan() {
+  const scanner = require(path.join(__dirname, '..', 'src', 'jsonl-scanner'));
+  const t0 = Date.now();
+  const result = scanner.scan();
+  const dt = ((Date.now() - t0) / 1000).toFixed(2);
+
+  console.log(`Scanned ${result.filesScanned} file(s), skipped ${result.filesSkipped} unchanged in ${dt}s`);
+  if (result.filesRemoved > 0) console.log(`  Removed ${result.filesRemoved} stale entries`);
+  console.log(`  Roots: ${result.roots.join(', ') || '(none found)'}`);
+  console.log(`  Days aggregated: ${result.days}`);
+
+  const summary = scanner.summarize();
+  if (summary.days === 0) {
+    console.log('\nNo usage data yet. Run Claude Code and try again.');
+    return;
+  }
+  console.log(`\n${summary.days} day(s), ${summary.sessions} session(s) tracked`);
+  console.log('Totals by model:');
+  const rows = Object.entries(summary.byModel).sort((a, b) => (b[1].turns || 0) - (a[1].turns || 0));
+  for (const [model, b] of rows) {
+    const cost = calculator.calculateUsageCost(model, b);
+    console.log(
+      `  ${model.padEnd(30)} ` +
+      `in=${b.input.toLocaleString().padStart(10)} ` +
+      `out=${b.output.toLocaleString().padStart(8)} ` +
+      `cR=${b.cacheRead.toLocaleString().padStart(11)} ` +
+      `cW=${b.cacheWrite.toLocaleString().padStart(10)} ` +
+      `$${cost.total.toFixed(2)}`
+    );
+  }
 }
 
 function handleRegenerateMap() {

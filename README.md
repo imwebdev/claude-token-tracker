@@ -413,6 +413,10 @@ test/
 
 ---
 
+## Acknowledgments
+
+The per-session JSONL transcript scanner ([`src/jsonl-scanner.js`](src/jsonl-scanner.js)) is inspired by [phuryn/claude-usage](https://github.com/phuryn/claude-usage) (MIT). Our port is Node + zero-deps with file-based storage; the original is Python + SQLite. The key insights — dedup by `message.id` and incremental mtime-gated scans of `~/.claude/projects/**/*.jsonl` — come from that project.
+
 ## License
 
 MIT

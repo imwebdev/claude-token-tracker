@@ -451,9 +451,70 @@ async function load() {
   try {
     DATA = await (await fetch('/api/dashboard')).json();
     isFirst ? render() : softRefresh();
+    loadReconcile();
   } catch (e) {
     if (isFirst) document.getElementById('app').innerHTML = `<div class="loading">Error: ${e.message}</div>`;
   }
+}
+
+async function loadReconcile() {
+  const target = document.getElementById('v-reconcile-body');
+  if (!target) return;
+  try {
+    const r = await (await fetch('/api/reconcile')).json();
+    target.innerHTML = renderReconcile(r);
+  } catch (e) {
+    target.innerHTML = `<div style="color:var(--danger)">Reconciliation failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderReconcile(r) {
+  if (!r || !r.summary) return '<div>No reconciliation data available.</div>';
+  const s = r.summary;
+  const divergent = (r.rows || [])
+    .filter(x => x.statsCache > 0 && x.jsonl > 0)
+    .sort((a, b) => Math.abs(b.pct || 0) - Math.abs(a.pct || 0))
+    .slice(0, 10);
+
+  const fmt = n => (n || 0).toLocaleString();
+  const ratio = (a, b) => (a > 0 && b > 0) ? (b / a).toFixed(1) + 'x' : '—';
+
+  const onlyStats = (r.rows || []).filter(x => x.statsCache > 0 && x.jsonl === 0).length;
+  const onlyJsonl = (r.rows || []).filter(x => x.statsCache === 0 && x.jsonl > 0).length;
+
+  return `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px">
+      <div><div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px">stats-cache total</div><div style="font-size:16px;color:var(--fg);font-family:var(--mono);margin-top:2px">${fmt(s.totalStatsCache)}</div></div>
+      <div><div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px">JSONL total</div><div style="font-size:16px;color:var(--fg);font-family:var(--mono);margin-top:2px">${fmt(s.totalJsonl)}</div></div>
+      <div><div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px">ratio</div><div style="font-size:16px;color:var(--fg);font-family:var(--mono);margin-top:2px">${ratio(s.totalStatsCache, s.totalJsonl)}</div></div>
+      <div><div style="font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:0.5px">days compared</div><div style="font-size:16px;color:var(--fg);font-family:var(--mono);margin-top:2px">${s.days}</div></div>
+    </div>
+    ${onlyStats || onlyJsonl ? `<div style="font-size:11px;color:var(--dim);margin-bottom:8px">${onlyStats} day(s) only in stats-cache (JSONL likely rotated) · ${onlyJsonl} day(s) only in JSONL</div>` : ''}
+    <div style="font-size:11px;color:var(--dim);margin-bottom:6px">Top divergent days (both sources have data):</div>
+    <table style="width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px">
+      <thead>
+        <tr style="color:var(--dim);text-align:right">
+          <th style="text-align:left;padding:4px 8px 4px 0;font-weight:500;border-bottom:1px solid var(--separator)">date</th>
+          <th style="padding:4px 8px;font-weight:500;border-bottom:1px solid var(--separator)">stats-cache</th>
+          <th style="padding:4px 8px;font-weight:500;border-bottom:1px solid var(--separator)">JSONL</th>
+          <th style="padding:4px 8px;font-weight:500;border-bottom:1px solid var(--separator)">ratio</th>
+          <th style="padding:4px 0 4px 8px;font-weight:500;border-bottom:1px solid var(--separator)">JSONL cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${divergent.map(x => `
+          <tr style="color:var(--muted);text-align:right">
+            <td style="text-align:left;padding:3px 8px 3px 0;color:var(--fg)">${esc(x.date)}</td>
+            <td style="padding:3px 8px">${fmt(x.statsCache)}</td>
+            <td style="padding:3px 8px">${fmt(x.jsonl)}</td>
+            <td style="padding:3px 8px;color:var(--accent)">${ratio(x.statsCache, x.jsonl)}</td>
+            <td style="padding:3px 0 3px 8px">$${x.jsonlCost.toFixed(2)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="font-size:10px;color:var(--dim);margin-top:8px">Issue <a href="https://github.com/imwebdev/claude-token-tracker/issues/92" style="color:var(--accent)" target="_blank">#92</a> — JSONL transcripts are the new source of truth. Cutover tracked in <a href="https://github.com/imwebdev/claude-token-tracker/issues/93" style="color:var(--accent)" target="_blank">#93</a>.</div>
+  `;
 }
 
 function $(v) { return typeof v === 'number' ? v.toLocaleString() : v; }
@@ -663,6 +724,13 @@ function buildHTML() {
           <p><strong style="color:var(--fg)">Be specific.</strong> File paths, line numbers, exact changes. Vague = more tokens.</p>
         </div>
       </div>
+    </div>
+
+    <div class="card anim d3" style="margin-top:12px" id="v-reconcile-card">
+      <div class="card-hd">
+        <h2>Data source reconciliation <span style="font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0">#92 · stats-cache vs JSONL</span></h2>
+      </div>
+      <div id="v-reconcile-body" style="font-size:12px;color:var(--muted)">Loading…</div>
     </div>
 
     </main>
