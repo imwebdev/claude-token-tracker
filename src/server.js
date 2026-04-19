@@ -6,8 +6,9 @@ const calculator = require('./calculator');
 const { generateInsights } = require('./insights');
 const events = require('./events');
 const { getLearningStats } = require('./learner');
-const { calculateCounterfactual, calculateDailySavings, buildDailyCostSeries } = require('./calculator');
+const { calculateCounterfactual, calculateDailySavings, buildDailyCostSeries, buildDailyCostSeriesFromJsonl, getModelTier, calculateUsageCost } = require('./calculator');
 const installMeta = require('./install-meta');
+const jsonlScanner = require('./jsonl-scanner');
 
 const config = require('./config');
 const os = require('os');
@@ -456,6 +457,9 @@ function buildDashboardData() {
     // Per-day cost series built from real stats-cache token counts (last 30 days).
     // [{ date, cost, tokens, byModel: { opus: { tokens, cost }, sonnet: ..., haiku: ... } }]
     dailyCostSeries: buildDailyCostSeries(stats?.dailyModelTokens, 30),
+    // Per-day cost series from JSONL transcripts (new source, parallel run for #92).
+    // Includes input/output/cacheRead/cacheWrite breakdown per tier.
+    dailyCostSeriesJsonl: buildDailyCostSeriesFromJsonl(jsonlScanner.readDailyUsage(), 30),
     // Install metadata — anchor point for "cost since install" visualizations
     installDate: installMeta.readInstall()?.installed_at || null,
     // Read-deduper: tokens saved by hard-blocking redundant reads
@@ -463,6 +467,75 @@ function buildDashboardData() {
     dedupeStats: events.getDedupeStats({ days: 30 }),
     // Efficiency analysis / grading
     analysis,
+  };
+}
+
+/**
+ * Reconciliation: per-day totals from stats-cache (old source) vs JSONL
+ * transcripts (new source). Surfaces divergence so we can verify the new
+ * source before retiring stats-cache in #93.
+ */
+function buildReconciliation() {
+  try { jsonlScanner.scan(); } catch { /* best-effort */ }
+
+  const stats = parser.readStatsCache();
+  const staleMap = {};
+  for (const d of (stats?.dailyModelTokens || [])) {
+    const row = { date: d.date, totalTokens: 0, byTier: {} };
+    for (const [modelId, tokens] of Object.entries(d.tokensByModel || {})) {
+      const tier = getModelTier(modelId);
+      row.totalTokens += tokens;
+      row.byTier[tier] = (row.byTier[tier] || 0) + tokens;
+    }
+    staleMap[d.date] = row;
+  }
+
+  const jsonlMap = {};
+  for (const d of jsonlScanner.readDailyUsage()) {
+    const row = { date: d.date, totalTokens: 0, totalCost: 0, byTier: {} };
+    for (const [modelId, u] of Object.entries(d.byModel || {})) {
+      const tier = getModelTier(modelId);
+      const tokens = (u.input || 0) + (u.output || 0) + (u.cacheRead || 0) + (u.cacheWrite || 0);
+      const cost = calculateUsageCost(modelId, u).total;
+      row.totalTokens += tokens;
+      row.totalCost += cost;
+      row.byTier[tier] = (row.byTier[tier] || 0) + tokens;
+    }
+    jsonlMap[d.date] = row;
+  }
+
+  const dates = new Set([...Object.keys(staleMap), ...Object.keys(jsonlMap)]);
+  const rows = [...dates].sort().map(date => {
+    const sc = staleMap[date] || { totalTokens: 0, byTier: {} };
+    const jl = jsonlMap[date] || { totalTokens: 0, totalCost: 0, byTier: {} };
+    const diff = jl.totalTokens - sc.totalTokens;
+    const pct = sc.totalTokens > 0 ? (diff / sc.totalTokens) * 100 : null;
+    return {
+      date,
+      statsCache: sc.totalTokens,
+      jsonl: jl.totalTokens,
+      jsonlCost: Math.round(jl.totalCost * 100) / 100,
+      diff,
+      pct: pct !== null ? Math.round(pct * 10) / 10 : null,
+      byTier: { statsCache: sc.byTier, jsonl: jl.byTier },
+    };
+  });
+
+  const totalStats = rows.reduce((a, r) => a + r.statsCache, 0);
+  const totalJsonl = rows.reduce((a, r) => a + r.jsonl, 0);
+
+  return {
+    lastScan: (jsonlScanner.readDailyUsage().length > 0)
+      ? (JSON.parse(fs.readFileSync(jsonlScanner.getManifestPath(), 'utf-8')).lastScan || null)
+      : null,
+    summary: {
+      days: rows.length,
+      totalStatsCache: totalStats,
+      totalJsonl,
+      diff: totalJsonl - totalStats,
+      pct: totalStats > 0 ? Math.round(((totalJsonl - totalStats) / totalStats) * 1000) / 10 : null,
+    },
+    rows,
   };
 }
 
@@ -535,6 +608,18 @@ const server = http.createServer((req, res) => {
       else enableHooks();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ enabled: !enabled }));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  if (req.url === '/api/reconcile') {
+    try {
+      const payload = buildReconciliation();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(payload));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));

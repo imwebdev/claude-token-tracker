@@ -274,15 +274,77 @@ function buildDailyCostSeries(dailyModelTokens, days = 30) {
   });
 }
 
+/**
+ * Cost for a single usage object with the four raw token types.
+ * Used by the JSONL scanner path (src/jsonl-scanner.js). Unlike calculateModelCost
+ * which takes camelCase stats-cache-style field names, this takes the canonical
+ * four-way breakdown directly.
+ *
+ * @param {string} modelId — full model ID (e.g. "claude-sonnet-4-6")
+ * @param {{input:number, output:number, cacheRead:number, cacheWrite:number}} usage
+ */
+function calculateUsageCost(modelId, usage) {
+  const price = getModelPrice(modelId);
+  const m = 1_000_000;
+  const input      = ((usage.input      || 0) / m) * price.input;
+  const output     = ((usage.output     || 0) / m) * price.output;
+  const cacheRead  = ((usage.cacheRead  || 0) / m) * price.cacheRead;
+  const cacheWrite = ((usage.cacheWrite || 0) / m) * price.cacheWrite;
+  return { input, output, cacheRead, cacheWrite, total: input + output + cacheRead + cacheWrite };
+}
+
+/**
+ * Per-day cost series from JSONL scanner daily records.
+ *
+ * @param {Array<{date:string, sessions:number, byModel:Object}>} dailyUsage
+ *   Output of jsonl-scanner.readDailyUsage()
+ * @param {number} days — tail window (default 30)
+ * @returns {Array<{date, cost, tokens, sessions, byModel:{<tier>:{tokens, cost, input, output, cacheRead, cacheWrite}}}>}
+ */
+function buildDailyCostSeriesFromJsonl(dailyUsage, days = 30) {
+  if (!Array.isArray(dailyUsage) || dailyUsage.length === 0) return [];
+  return dailyUsage.slice(-days).map(d => {
+    let totalCost = 0;
+    let totalTokens = 0;
+    const byTier = {};
+    for (const [modelId, u] of Object.entries(d.byModel || {})) {
+      const tier = getModelTier(modelId);
+      const cost = calculateUsageCost(modelId, u);
+      const tokens = (u.input || 0) + (u.output || 0) + (u.cacheRead || 0) + (u.cacheWrite || 0);
+      totalCost += cost.total;
+      totalTokens += tokens;
+      if (!byTier[tier]) byTier[tier] = { tokens: 0, cost: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      byTier[tier].tokens     += tokens;
+      byTier[tier].cost       += cost.total;
+      byTier[tier].input      += u.input      || 0;
+      byTier[tier].output     += u.output     || 0;
+      byTier[tier].cacheRead  += u.cacheRead  || 0;
+      byTier[tier].cacheWrite += u.cacheWrite || 0;
+    }
+    for (const t of Object.keys(byTier)) {
+      byTier[t].cost = Math.round(byTier[t].cost * 10000) / 10000;
+    }
+    return {
+      date: d.date,
+      cost: Math.round(totalCost * 10000) / 10000,
+      tokens: totalTokens,
+      sessions: d.sessions || 0,
+      byModel: byTier,
+    };
+  });
+}
+
 module.exports = {
   PRICING,
   getModelPrice,
   getModelTier,
   calculateModelCost,
+  calculateUsageCost,
   calculateTotalCosts,
   calculateOptimalCost,
   estimateSessionCost,
   calculateCounterfactual,
   calculateDailySavings,
   buildDailyCostSeries,
+  buildDailyCostSeriesFromJsonl,
 };
