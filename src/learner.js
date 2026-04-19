@@ -271,7 +271,51 @@ function getLearningStats() {
   };
 }
 
+/**
+ * Build a suggested routing matrix from accumulated outcome data (#95).
+ *
+ * Strategy per family row: find the cheapest model (haiku < sonnet < opus) whose
+ * weighted success rate is ≥ 0.95 across ≥ MIN_SUGGEST samples. Apply that model
+ * to all three complexity columns for the family. If no model meets the bar,
+ * fall back to the provided defaultMatrix for that family.
+ *
+ * Complexity-aware suggestions are a future improvement — the current learner
+ * doesn't bucket by complexity, so all three columns get the same suggestion
+ * for a given family until the outcome schema is extended.
+ *
+ * @param {object} defaultMatrix — fallback matrix (from config.DEFAULT_MATRIX)
+ * @returns {object} matrix of shape { family: { low, medium, high } }
+ */
+function suggestMatrix(defaultMatrix) {
+  const MIN_SUGGEST = 10;        // floor for meaningful suggestion
+  const MIN_RATE = 0.95;         // "very high success" threshold
+  const TIERS = ['haiku', 'sonnet', 'opus'];
+
+  const data = buildLearningData();
+  const byFamily = {};
+  for (const entry of Object.values(data.byFamilyModel)) {
+    if (!byFamily[entry.family]) byFamily[entry.family] = {};
+    byFamily[entry.family][entry.model] = entry;
+  }
+
+  const suggested = {};
+  for (const [family, defaults] of Object.entries(defaultMatrix)) {
+    let pick = null;
+    for (const tier of TIERS) {
+      const e = byFamily[family]?.[tier];
+      if (e && e.samples >= MIN_SUGGEST && e.weightedRate >= MIN_RATE) {
+        pick = tier;
+        break; // cheapest first — take it
+      }
+    }
+    suggested[family] = pick
+      ? { low: pick, medium: pick, high: pick }
+      : { ...defaults };
+  }
+  return suggested;
+}
+
 /** Clear the cache (e.g. after new events are recorded). */
 function clearCache() { _cache = null; _cacheTime = 0; }
 
-module.exports = { buildLearningData, getAdjustment, getLearningStats, clearCache };
+module.exports = { buildLearningData, getAdjustment, getLearningStats, suggestMatrix, clearCache };

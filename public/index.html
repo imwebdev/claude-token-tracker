@@ -451,10 +451,147 @@ async function load() {
   try {
     DATA = await (await fetch('/api/dashboard')).json();
     isFirst ? render() : softRefresh();
+    loadMatrix();
   } catch (e) {
     if (isFirst) document.getElementById('app').innerHTML = `<div class="loading">Error: ${e.message}</div>`;
   }
 }
+
+let MATRIX_STATE = null;
+
+async function loadMatrix() {
+  const target = document.getElementById('v-matrix-body');
+  if (!target) return;
+  try {
+    MATRIX_STATE = await (await fetch('/api/matrix')).json();
+    target.innerHTML = renderMatrix(MATRIX_STATE);
+  } catch (e) {
+    target.innerHTML = `<div style="color:var(--danger)">Matrix load failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderMatrix(state) {
+  if (!state || !state.matrix) return '<div>No matrix data.</div>';
+  const { families, complexities, matrix } = state;
+  const learnerByFamilyModel = {};
+  for (const entry of state.learnerStats || []) {
+    learnerByFamilyModel[`${entry.family}:${entry.model}`] = entry;
+  }
+  function cellOptions(family, cx, current) {
+    const opts = ['haiku', 'sonnet', 'opus'].map(m => {
+      const e = learnerByFamilyModel[`${family}:${m}`];
+      const title = e ? `${m}: ${Math.round(e.rate * 100)}% success · ${e.samples} outcomes` : `${m}: no data yet`;
+      return `<option value="${m}" ${m === current ? 'selected' : ''} title="${title}">${m}</option>`;
+    }).join('');
+    return `<select data-family="${family}" data-cx="${cx}" class="matrix-cell" style="font-family:var(--mono);font-size:11px;padding:3px 5px;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px">${opts}</select>`;
+  }
+  const rows = families.map(f => {
+    const row = matrix[f] || {};
+    return `
+      <tr>
+        <td style="padding:4px 8px 4px 0;color:var(--fg);font-family:var(--mono);font-size:11px">${f}</td>
+        ${complexities.map(cx => `<td style="padding:4px 8px">${cellOptions(f, cx, row[cx] || 'sonnet')}</td>`).join('')}
+      </tr>
+    `;
+  }).join('');
+  const migrationNote = state.migratedFromForceModel
+    ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px;padding:8px;background:var(--accent-dim);border-radius:4px">Migrated from <code>force_model=${esc(state.migratedFromForceModel)}</code>. All cells seeded. Adjust below and save to replace the legacy setting.</div>`
+    : '';
+  const defaultsNote = state.isUsingDefaults
+    ? `<div style="font-size:11px;color:var(--dim);margin-bottom:8px">Showing built-in defaults. Save to persist your own matrix.</div>`
+    : '';
+  return `
+    ${migrationNote}
+    ${defaultsNote}
+    <div style="overflow-x:auto">
+    <table style="border-collapse:collapse;margin-bottom:12px">
+      <thead>
+        <tr style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:0.5px">
+          <th style="text-align:left;padding:4px 8px 4px 0;font-weight:500;border-bottom:1px solid var(--separator)">family</th>
+          ${complexities.map(cx => `<th style="text-align:left;padding:4px 8px;font-weight:500;border-bottom:1px solid var(--separator)">${cx}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button id="matrix-save" class="btn" style="padding:6px 14px;background:var(--fg);color:var(--bg);border:none;border-radius:4px;font-size:12px;cursor:pointer">Save matrix</button>
+      <button id="matrix-reset" class="btn" style="padding:6px 14px;background:transparent;color:var(--fg);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer">Reset to suggested (from learner data)</button>
+      <span style="font-size:11px;color:var(--dim);margin-left:4px">Set all to:</span>
+      <select id="matrix-set-all" style="font-family:var(--mono);font-size:11px;padding:4px 6px;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px">
+        <option value="">—</option>
+        <option value="haiku">haiku (equivalent to force_model=haiku)</option>
+        <option value="sonnet">sonnet</option>
+        <option value="opus">opus</option>
+      </select>
+      <span id="matrix-status" style="font-size:11px;color:var(--dim);margin-left:auto"></span>
+    </div>
+    <div style="font-size:10px;color:var(--dim);margin-top:10px">
+      Hover any cell to see learner success rate.
+      Matrix overrides the classifier — it's the primary routing source.
+      <code>force_model</code> is deprecated; setting every cell to the same model achieves the same result.
+    </div>
+  `;
+}
+
+function matrixStatus(msg, color) {
+  const el = document.getElementById('matrix-status');
+  if (!el) return;
+  el.style.color = color || 'var(--dim)';
+  el.textContent = msg;
+  if (msg) setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+function collectMatrix() {
+  const out = {};
+  document.querySelectorAll('.matrix-cell').forEach(sel => {
+    const f = sel.dataset.family;
+    const cx = sel.dataset.cx;
+    if (!out[f]) out[f] = {};
+    out[f][cx] = sel.value;
+  });
+  return out;
+}
+
+document.addEventListener('click', async (e) => {
+  if (e.target?.id === 'matrix-save') {
+    try {
+      const matrix = collectMatrix();
+      const r = await fetch('/api/matrix', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matrix }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error || 'save failed');
+      matrixStatus('Saved. Takes effect on next prompt.', 'var(--accent)');
+    } catch (err) {
+      matrixStatus(`Save failed: ${err.message}`, 'var(--danger)');
+    }
+  }
+  if (e.target?.id === 'matrix-reset') {
+    try {
+      const r = await fetch('/api/matrix/suggest');
+      const { matrix } = await r.json();
+      for (const sel of document.querySelectorAll('.matrix-cell')) {
+        const f = sel.dataset.family;
+        const cx = sel.dataset.cx;
+        if (matrix[f]?.[cx]) sel.value = matrix[f][cx];
+      }
+      matrixStatus('Reset from learner data. Click "Save matrix" to persist.', 'var(--accent)');
+    } catch (err) {
+      matrixStatus(`Reset failed: ${err.message}`, 'var(--danger)');
+    }
+  }
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target?.id === 'matrix-set-all' && e.target.value) {
+    const m = e.target.value;
+    for (const sel of document.querySelectorAll('.matrix-cell')) sel.value = m;
+    e.target.value = '';
+    matrixStatus(`All cells set to ${m}. Click "Save matrix" to persist.`, 'var(--accent)');
+  }
+});
 
 function $(v) { return typeof v === 'number' ? v.toLocaleString() : v; }
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -663,6 +800,13 @@ function buildHTML() {
           <p><strong style="color:var(--fg)">Be specific.</strong> File paths, line numbers, exact changes. Vague = more tokens.</p>
         </div>
       </div>
+    </div>
+
+    <div class="card anim d3" style="margin-top:12px" id="v-matrix-card">
+      <div class="card-hd">
+        <h2>Routing matrix <span style="font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0">#95 · per (family × complexity)</span></h2>
+      </div>
+      <div id="v-matrix-body" style="font-size:12px;color:var(--muted)">Loading…</div>
     </div>
 
     </main>
