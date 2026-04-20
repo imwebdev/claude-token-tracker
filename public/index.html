@@ -495,38 +495,44 @@ function renderMatrix(state) {
     `;
   }).join('');
   const migrationNote = state.migratedFromForceModel
-    ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px;padding:8px;background:var(--accent-dim);border-radius:4px">Migrated from <code>force_model=${esc(state.migratedFromForceModel)}</code>. All cells seeded. Adjust below and save to replace the legacy setting.</div>`
+    ? `<div style="font-size:11px;color:var(--accent);margin-bottom:8px;padding:8px;background:var(--accent-dim);border-radius:4px">Migrated from <code>force_model=${esc(state.migratedFromForceModel)}</code>. All cells seeded. Pick a preset or open Advanced to adjust.</div>`
     : '';
   const defaultsNote = state.isUsingDefaults
-    ? `<div style="font-size:11px;color:var(--dim);margin-bottom:8px">Showing built-in defaults. Save to persist your own matrix.</div>`
+    ? `<div style="font-size:11px;color:var(--dim);margin-bottom:8px">Using built-in defaults. Pick a preset and Save to persist.</div>`
     : '';
   return `
     ${migrationNote}
     ${defaultsNote}
-    <div style="overflow-x:auto">
-    <table style="border-collapse:collapse;margin-bottom:12px">
-      <thead>
-        <tr style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:0.5px">
-          <th style="text-align:left;padding:4px 8px 4px 0;font-weight:500;border-bottom:1px solid var(--separator)">family</th>
-          ${complexities.map(cx => `<th style="text-align:left;padding:4px 8px;font-weight:500;border-bottom:1px solid var(--separator)">${cx}</th>`).join('')}
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <span style="font-size:11px;color:var(--dim)">Preset:</span>
-      <select id="matrix-preset" style="font-family:var(--mono);font-size:11px;padding:4px 6px;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      <span style="font-size:12px;font-weight:500;color:var(--fg)">Preset:</span>
+      <select id="matrix-preset" style="font-family:var(--mono);font-size:12px;padding:5px 8px;border:1px solid var(--border);background:var(--card);color:var(--fg);border-radius:4px;min-width:140px">
         <option value="">— choose —</option>
         ${Object.keys(state.presets || {}).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('')}
       </select>
-      <button id="matrix-reset" class="btn" style="padding:6px 12px;background:transparent;color:var(--fg);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer" title="Suggest cells based on your own learner success rates">Suggest from learner data</button>
-      <button id="matrix-save" class="btn" style="padding:6px 14px;background:var(--fg);color:var(--bg);border:none;border-radius:4px;font-size:12px;cursor:pointer;margin-left:auto">Save matrix</button>
-      <span id="matrix-status" style="font-size:11px;color:var(--dim);width:100%;text-align:right;margin-top:4px"></span>
+      <button id="matrix-save" class="btn" style="padding:6px 14px;background:var(--fg);color:var(--bg);border:none;border-radius:4px;font-size:12px;cursor:pointer;margin-left:auto">Save</button>
     </div>
-    <div style="font-size:10px;color:var(--dim);margin-top:10px;line-height:1.5">
-      <strong style="color:var(--fg)">Presets</strong> are one-click starting points — pick one, tweak individual cells, then Save. <strong style="color:var(--fg)">Balanced</strong> is the default. <strong style="color:var(--fg)">Coder</strong> leans opus on code/debug. <strong style="color:var(--fg)">Reader</strong> and <strong style="color:var(--fg)">Budget</strong> lean haiku. <strong style="color:var(--fg)">Max accuracy</strong> sets every cell to opus. Hover any cell to see your historical success rate for that family × model.
+    <div style="font-size:11px;color:var(--dim);line-height:1.6;margin-bottom:6px">
+      <strong style="color:var(--fg)">Balanced</strong> all-around default · <strong style="color:var(--fg)">Coder</strong> opus on code/debug · <strong style="color:var(--fg)">Reader</strong> &amp; <strong style="color:var(--fg)">Budget</strong> lean haiku · <strong style="color:var(--fg)">Max accuracy</strong> all opus
     </div>
+    <div id="matrix-status" style="font-size:11px;color:var(--dim);min-height:16px;margin-bottom:4px"></div>
+    <details style="margin-top:4px;border-top:1px solid var(--separator);padding-top:10px">
+      <summary style="cursor:pointer;font-size:12px;color:var(--fg);user-select:none;padding:2px 0">Advanced: per-cell overrides <span style="color:var(--dim);font-weight:400">(${families.length} × ${complexities.length} grid)</span></summary>
+      <div style="padding-top:10px">
+        <div style="font-size:11px;color:var(--dim);margin-bottom:8px;line-height:1.5">Tweak individual cells after picking a preset. Hover any cell to see your historical success rate for that family × model.</div>
+        <div style="overflow-x:auto">
+        <table style="border-collapse:collapse;margin-bottom:10px">
+          <thead>
+            <tr style="color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:0.5px">
+              <th style="text-align:left;padding:4px 8px 4px 0;font-weight:500;border-bottom:1px solid var(--separator)">family</th>
+              ${complexities.map(cx => `<th style="text-align:left;padding:4px 8px;font-weight:500;border-bottom:1px solid var(--separator)">${cx}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        </div>
+        <button id="matrix-reset" class="btn" style="padding:6px 12px;background:transparent;color:var(--fg);border:1px solid var(--border);border-radius:4px;font-size:12px;cursor:pointer" title="Fill cells using the highest-success model per family from your learner history">Suggest from my learner data</button>
+      </div>
+    </details>
   `;
 }
 
@@ -791,7 +797,7 @@ function buildHTML() {
 
     <div class="card anim d3" style="margin-top:12px" id="v-matrix-card">
       <div class="card-hd">
-        <h2>Routing matrix <span style="font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0">#95 · per (family × complexity)</span></h2>
+        <h2>Routing matrix <span style="font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0">pick a preset</span></h2>
       </div>
       <div id="v-matrix-body" style="font-size:12px;color:var(--muted)">Loading…</div>
     </div>
